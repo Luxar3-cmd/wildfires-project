@@ -24,9 +24,56 @@ VAR_RENAMES = {
 	"total_precipitation": "tp",
 	"ssrd": "ssrd",
 	"surface_solar_radiation_downwards": "ssrd",
+	"stl1": "stl1",
+	"soil_temperature_level_1": "stl1",
+	"stl2": "stl2",
+	"soil_temperature_level_2": "stl2",
+	"stl3": "stl3",
+	"soil_temperature_level_3": "stl3",
+	"stl4": "stl4",
+	"soil_temperature_level_4": "stl4",
+	"swvl1": "swvl1",
+	"volumetric_soil_water_layer_1": "swvl1",
+	"swvl2": "swvl2",
+	"volumetric_soil_water_layer_2": "swvl2",
+	"swvl3": "swvl3",
+	"volumetric_soil_water_layer_3": "swvl3",
+	"swvl4": "swvl4",
+	"volumetric_soil_water_layer_4": "swvl4",
+	"evavt": "evavt",
+	"evaporation_from_vegetation_transpiration": "evavt",
+	"pev": "pev",
+	"potential_evaporation": "pev",
+	"e": "e",
+	"total_evaporation": "e",
+	"lai_hv": "lai_hv",
+	"leaf_area_index_high_vegetation": "lai_hv",
+	"lai_lv": "lai_lv",
+	"leaf_area_index_low_vegetation": "lai_lv",
+	# Invariantes
+	"slt": "slt",
+	"soil_type": "slt",
+	"lsm": "lsm",
+	"land_sea_mask": "lsm",
+	"cvh": "cvh",
+	"high_vegetation_cover": "cvh",
+	"cvl": "cvl",
+	"low_vegetation_cover": "cvl",
+	"tvh": "tvh",
+	"type_of_high_vegetation": "tvh",
+	"tvl": "tvl",
+	"type_of_low_vegetation": "tvl",
 }
 
-EXPECTED_KEYS = ["t2m", "d2m", "u10", "v10", "tp", "ssrd"]
+EXPECTED_KEYS = [
+	"t2m", "d2m", "u10", "v10", "tp", "ssrd",
+	"stl1", "stl2", "stl3", "stl4",
+	"swvl1", "swvl2", "swvl3", "swvl4",
+	"evavt", "pev", "e",
+	"lai_hv", "lai_lv",
+]
+
+INVARIANT_KEYS = ["slt", "lsm", "cvh", "cvl", "tvh", "tvl"]
 
 
 def _utc_naive_timestamp(ts: pd.Timestamp) -> pd.Timestamp:
@@ -116,4 +163,42 @@ def _nan_result() -> dict:
 	return out
 
 
-__all__ = ["extract_point", "EXPECTED_KEYS", "MAX_DIST_KM", "MAX_TIME_HOURS"]
+def extract_invariant_point(ds: xr.Dataset, lat: float, lon: float) -> dict:
+	"""Extrae variables invariantes en el grid point más cercano (sin dimensión temporal)."""
+	if pd.isna(lat) or pd.isna(lon):
+		return {k: None for k in INVARIANT_KEYS}
+
+	lat_name = "latitude" if "latitude" in ds.coords else "lat"
+	lon_name = "longitude" if "longitude" in ds.coords else "lon"
+
+	ds_sq = ds.squeeze(drop=True)
+
+	try:
+		point = ds_sq.sel({lat_name: lat, lon_name: lon}, method="nearest")
+	except Exception:
+		return {k: None for k in INVARIANT_KEYS}
+
+	out: dict = {}
+	for var in ds_sq.data_vars:
+		key = VAR_RENAMES.get(var, var)
+		if key not in INVARIANT_KEYS:
+			continue
+		try:
+			fval = float(point[var].values)
+			out[key] = None if np.isnan(fval) else fval
+		except (TypeError, ValueError):
+			out[key] = None
+
+	for k in INVARIANT_KEYS:
+		out.setdefault(k, None)
+	return out
+
+
+__all__ = [
+	"extract_point",
+	"extract_invariant_point",
+	"EXPECTED_KEYS",
+	"INVARIANT_KEYS",
+	"MAX_DIST_KM",
+	"MAX_TIME_HOURS",
+]

@@ -16,8 +16,8 @@ from tqdm import tqdm
 
 from src.config import CHILE_BBOX, DATA_PROCESSED, ERA5_RAW_DIR
 from src.derived_features import add_all
-from src.era5_downloader import era5_month_path, era5_year_path
-from src.era5_extractor import EXPECTED_KEYS, extract_point
+from src.era5_downloader import era5_invariants_path, era5_month_path, era5_year_path
+from src.era5_extractor import EXPECTED_KEYS, INVARIANT_KEYS, extract_invariant_point, extract_point
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +164,21 @@ def enrich_conaf_with_era5(
 	era5_df = pd.DataFrame(results, index=df.index).reindex(columns=era5_cols)
 	enriched = pd.concat([df.drop(columns=["_year", "_month"]), era5_df], axis=1)
 	enriched = add_all(enriched)
+
+	inv_path = era5_invariants_path()
+	if inv_path.exists():
+		with xr.open_dataset(inv_path) as ds_inv:
+			inv_rows = [
+				extract_invariant_point(ds_inv, row[lat_col], row[lon_col])
+				for _, row in enriched[[lat_col, lon_col]].iterrows()
+			]
+		inv_df = pd.DataFrame(inv_rows, index=enriched.index)
+		enriched = pd.concat([enriched, inv_df], axis=1)
+		logger.info("Invariantes ERA5 añadidas: %s", INVARIANT_KEYS)
+	else:
+		logger.warning("Archivo de invariantes ERA5 no encontrado (%s) — columnas omitidas", inv_path)
+		for k in INVARIANT_KEYS:
+			enriched[k] = None
 
 	if save:
 		out_path.parent.mkdir(parents=True, exist_ok=True)
