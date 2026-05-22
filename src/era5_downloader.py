@@ -1,7 +1,10 @@
 """Descarga de ERA5-Land desde Copernicus CDS.
 
-Estrategia: 1 request por año por bbox completo de Chile, NetCDF horario.
-Variables: t2m, d2m, u10, v10, tp, ssrd. Dataset: reanalysis-era5-land.
+Estrategia temporal: 1 request por mes por bbox de estudio, NetCDF horario.
+Opcionalmente se puede descargar 1 request por año completo (download_era5_year).
+Variables temporales: definidas en src/config.ERA5_VARIABLES.
+Variables invariantes: campos estáticos (suelo, cobertura) que se descargan una sola vez.
+Dataset CDS: reanalysis-era5-land.
 """
 from __future__ import annotations
 
@@ -25,6 +28,11 @@ from src.config import (
 
 logger = logging.getLogger(__name__)
 ERA5_LICENCE_URL = "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=download#manage-licences"
+
+# Parámetros de conexión al CDS. Sobreescribibles con variables de entorno.
+# CDS_TIMEOUT_SECONDS: tiempo máximo de espera por respuesta HTTP (no incluye tiempo en cola).
+# CDS_RETRY_MAX: reintentos automáticos ante errores 5xx o de red.
+# CDS_SLEEP_MAX_SECONDS: espera máxima entre reintentos (backoff exponencial).
 CDS_TIMEOUT_SECONDS = int(os.getenv("CDS_TIMEOUT_SECONDS", "90"))
 CDS_RETRY_MAX = int(os.getenv("CDS_RETRY_MAX", "3"))
 CDS_SLEEP_MAX_SECONDS = int(os.getenv("CDS_SLEEP_MAX_SECONDS", "15"))
@@ -62,6 +70,8 @@ def _request(
 	bbox: dict,
 	variables: list[str],
 ) -> dict:
+	# Nota: el API de CDS espera el bbox como [north, west, south, east],
+	# que es el orden inverso al convencional (min_lat, min_lon, max_lat, max_lon).
 	return {
 		"variable": variables,
 		"year": str(year),
@@ -107,15 +117,10 @@ def download_era5_year(
 	out_dir: Path = ERA5_RAW_DIR,
 	overwrite: bool = False,
 ) -> Path:
-	"""Descarga 1 año de ERA5-Land en NetCDF horario.
+	"""Descarga 1 año completo de ERA5-Land en NetCDF horario.
 
-	Parameters
-	----------
-	year : año a descargar.
-	bbox : dict con keys north, west, south, east. Default: Chile continental.
-	variables : iterable de nombres de variables CDS. Default: las 6 estándar.
-	out_dir : directorio de salida.
-	overwrite : si True, descarga aunque el archivo ya exista.
+	Útil para años históricos completos. Para años parciales o corridas
+	incrementales, preferir download_era5_month / download_era5_months.
 	"""
 	bbox = bbox or CHILE_BBOX
 	variables = list(variables or ERA5_VARIABLES)
@@ -134,6 +139,10 @@ def download_era5_year(
 	return target
 
 
+def _var_batches(variables: list[str], batch_size: int) -> list[list[str]]:
+	return [variables[i : i + batch_size] for i in range(0, len(variables), batch_size)]
+
+
 def download_era5_month(
 	year: int,
 	month: int,
@@ -142,8 +151,17 @@ def download_era5_month(
 	variables: Optional[Iterable[str]] = None,
 	out_dir: Path = ERA5_RAW_DIR,
 	overwrite: bool = False,
+	max_vars_per_request: int = 6,
 ) -> Path:
-	"""Descarga 1 mes de ERA5-Land en NetCDF horario."""
+	"""Descarga 1 mes de ERA5-Land en NetCDF horario.
+
+	Si se especifica `days`, solo descarga esos días del mes.
+	Si el número de variables supera `max_vars_per_request`, divide en lotes y
+	fusiona los NetCDF resultantes con xarray. La nueva API de CDS rechaza
+	requests con demasiadas variables × timesteps en un solo call.
+	"""
+	import xarray as xr
+
 	bbox = bbox or CHILE_BBOX
 	variables = list(variables or ERA5_VARIABLES)
 	out_dir.mkdir(parents=True, exist_ok=True)
@@ -157,10 +175,33 @@ def download_era5_month(
 		request_days = [f"{day:02d}" for day in range(1, monthrange(year, month)[1] + 1)]
 	else:
 		request_days = [f"{int(day):02d}" for day in sorted(set(days))]
-	request = _request(year, [f"{month:02d}"], request_days, bbox, variables)
 
-	logger.info("Solicitando ERA5-Land %04d-%02d (%d día(s))", year, month, len(request_days))
-	_retrieve(request, target)
+	batches = _var_batches(variables, max_vars_per_request)
+	if len(batches) == 1:
+		request = _request(year, [f"{month:02d}"], request_days, bbox, variables)
+		logger.info("Solicitando ERA5-Land %04d-%02d (%d día(s))", year, month, len(request_days))
+		_retrieve(request, target)
+	else:
+		# Descarga un lote de variables a la vez y fusiona al final.
+		# Necesario porque la API de CDS limita el "costo" por request.
+		temp_paths: list[Path] = []
+		for i, batch in enumerate(batches):
+			tmp = out_dir / f"_tmp_{year}_{month:02d}_b{i}.nc"
+			request = _request(year, [f"{month:02d}"], request_days, bbox, batch)
+			logger.info(
+				"Solicitando ERA5-Land %04d-%02d lote %d/%d (%d var(s), %d día(s))",
+				year, month, i + 1, len(batches), len(batch), len(request_days),
+			)
+			_retrieve(request, tmp)
+			temp_paths.append(tmp)
+		logger.info("Fusionando %d lotes → %s", len(temp_paths), target)
+		datasets = [xr.open_dataset(p) for p in temp_paths]
+		xr.merge(datasets).to_netcdf(target)
+		for ds in datasets:
+			ds.close()
+		for p in temp_paths:
+			p.unlink(missing_ok=True)
+
 	logger.info("Descargado: %s (%.1f MB)", target, target.stat().st_size / 1e6)
 	return target
 
@@ -172,7 +213,7 @@ def download_era5_months(
 	out_dir: Path = ERA5_RAW_DIR,
 	overwrite: bool = False,
 ) -> list[Path]:
-	"""Descarga ERA5-Land para una lista de meses (year, month)."""
+	"""Descarga ERA5-Land para una lista de (año, mes) o (año, mes, días)."""
 	paths = []
 	for item in sorted(set(year_months)):
 		year, month = int(item[0]), int(item[1])
@@ -189,7 +230,7 @@ def download_era5_range(
 	out_dir: Path = ERA5_RAW_DIR,
 	overwrite: bool = False,
 ) -> list[Path]:
-	"""Descarga ERA5-Land para un rango de años (inclusivo)."""
+	"""Descarga ERA5-Land para un rango de años completos (inclusivo)."""
 	paths = []
 	for year in range(start_year, end_year + 1):
 		paths.append(download_era5_year(year, bbox, variables, out_dir, overwrite))
@@ -208,8 +249,10 @@ def download_era5_invariants(
 ) -> Path:
 	"""Descarga variables invariantes de ERA5-Land (un solo timestamp estático).
 
-	Las invariantes no tienen dimensión temporal real; CDS las entrega con un
-	único paso de tiempo que xarray puede degenerar. Se descargan una sola vez.
+	Las invariantes (tipo de suelo, máscara tierra-mar, cobertura vegetal, etc.)
+	no varían con el tiempo. El API de CDS igual requiere una fecha; se usa
+	2002-01-01 como sentinel arbitrario. El NetCDF resultante tendrá una
+	dimensión temporal degenérada (size=1) que se elimina al extraer con squeeze().
 	"""
 	bbox = bbox or CHILE_BBOX
 	invariants = list(invariants or ERA5_INVARIANTS)
