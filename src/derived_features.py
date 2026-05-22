@@ -46,10 +46,22 @@ def precipitation_mm(tp_m: pd.Series) -> pd.Series:
 	return pd.to_numeric(tp_m, errors="coerce") * 1000.0
 
 
+def vpd_hpa(t2m_k: pd.Series, d2m_k: pd.Series) -> pd.Series:
+	"""Déficit de Presión de Vapor (hPa) desde temperatura y punto de rocío en Kelvin.
+
+	VPD = e_sat(T) - e_sat(Td), usando Magnus-Tetens (mismos coeficientes que RH).
+	"""
+	t = pd.to_numeric(t2m_k, errors="coerce") - KELVIN_TO_C
+	td = pd.to_numeric(d2m_k, errors="coerce") - KELVIN_TO_C
+	es_t = 6.112 * np.exp(17.625 * t / (t + 243.04))
+	es_td = 6.112 * np.exp(17.625 * td / (td + 243.04))
+	return (es_t - es_td).clip(lower=0)
+
+
 def add_all(df: pd.DataFrame) -> pd.DataFrame:
 	"""Aplica todas las features derivadas al DataFrame in-place y retorna.
 
-	Espera columnas crudas: t2m, d2m, u10, v10, tp.
+	Espera columnas crudas: t2m, d2m, u10, v10, tp, stl1-4.
 	Si alguna no existe, se omite la derivación correspondiente.
 	"""
 	df = df.copy()
@@ -59,11 +71,16 @@ def add_all(df: pd.DataFrame) -> pd.DataFrame:
 		df["d2m_celsius"] = kelvin_to_celsius(df["d2m"])
 	if {"t2m", "d2m"}.issubset(df.columns):
 		df["relative_humidity"] = relative_humidity(df["t2m"], df["d2m"])
+		df["vpd_hpa"] = vpd_hpa(df["t2m"], df["d2m"])
 	if {"u10", "v10"}.issubset(df.columns):
 		df["wind_speed"] = wind_speed(df["u10"], df["v10"])
 		df["wind_direction"] = wind_direction(df["u10"], df["v10"])
 	if "tp" in df.columns:
 		df["tp_mm"] = precipitation_mm(df["tp"])
+	for level in (1, 2, 3, 4):
+		col = f"stl{level}"
+		if col in df.columns:
+			df[f"{col}_celsius"] = kelvin_to_celsius(df[col])
 	return df
 
 
@@ -73,5 +90,6 @@ __all__ = [
 	"wind_speed",
 	"wind_direction",
 	"precipitation_mm",
+	"vpd_hpa",
 	"add_all",
 ]

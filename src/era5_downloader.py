@@ -18,6 +18,7 @@ from src.config import (
 	CDSAPI_KEY,
 	CDSAPI_URL,
 	CHILE_BBOX,
+	ERA5_INVARIANTS,
 	ERA5_RAW_DIR,
 	ERA5_VARIABLES,
 )
@@ -195,11 +196,54 @@ def download_era5_range(
 	return paths
 
 
+def era5_invariants_path(out_dir: Path = ERA5_RAW_DIR) -> Path:
+	return out_dir / "era5_land_invariants.nc"
+
+
+def download_era5_invariants(
+	bbox: Optional[dict] = None,
+	invariants: Optional[Iterable[str]] = None,
+	out_dir: Path = ERA5_RAW_DIR,
+	overwrite: bool = False,
+) -> Path:
+	"""Descarga variables invariantes de ERA5-Land (un solo timestamp estático).
+
+	Las invariantes no tienen dimensión temporal real; CDS las entrega con un
+	único paso de tiempo que xarray puede degenerar. Se descargan una sola vez.
+	"""
+	bbox = bbox or CHILE_BBOX
+	invariants = list(invariants or ERA5_INVARIANTS)
+	out_dir.mkdir(parents=True, exist_ok=True)
+	target = era5_invariants_path(out_dir)
+
+	if target.exists() and not overwrite:
+		logger.info("ERA5 invariantes ya existen, skip: %s", target)
+		return target
+
+	request = {
+		"variable": invariants,
+		"year": "2002",
+		"month": "01",
+		"day": "01",
+		"time": "00:00",
+		"area": [bbox["north"], bbox["west"], bbox["south"], bbox["east"]],
+		"data_format": "netcdf",
+		"download_format": "unarchived",
+	}
+
+	logger.info("Solicitando invariantes ERA5-Land (%d variables)", len(invariants))
+	_retrieve(request, target)
+	logger.info("Descargado: %s (%.1f MB)", target, target.stat().st_size / 1e6)
+	return target
+
+
 __all__ = [
 	"download_era5_year",
 	"download_era5_range",
 	"download_era5_month",
 	"download_era5_months",
+	"download_era5_invariants",
 	"era5_year_path",
 	"era5_month_path",
+	"era5_invariants_path",
 ]

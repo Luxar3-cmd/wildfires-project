@@ -18,7 +18,7 @@ ERA5_RAW_DIR = DATA_RAW / "era5"
 
 CONAF_DATASET_DOI = "doi:10.71578/UXAUN5"
 
-CHILE_BBOX = {"north": -17.0, "west": -76.0, "south": -56.0, "east": -66.0}
+CHILE_BBOX = {"north": -34.0, "west": -74.0, "south": -42.0, "east": -70.0}
 
 ERA5_VARIABLES = [
 	"2m_temperature",
@@ -27,6 +27,28 @@ ERA5_VARIABLES = [
 	"10m_v_component_of_wind",
 	"total_precipitation",
 	"surface_solar_radiation_downwards",
+	"soil_temperature_level_1",
+	"soil_temperature_level_2",
+	"soil_temperature_level_3",
+	"soil_temperature_level_4",
+	"volumetric_soil_water_layer_1",
+	"volumetric_soil_water_layer_2",
+	"volumetric_soil_water_layer_3",
+	"volumetric_soil_water_layer_4",
+	"evaporation_from_vegetation_transpiration",
+	"potential_evaporation",
+	"total_evaporation",
+	"leaf_area_index_high_vegetation",
+	"leaf_area_index_low_vegetation",
+]
+
+ERA5_INVARIANTS = [
+	"soil_type",
+	"land_sea_mask",
+	"high_vegetation_cover",
+	"low_vegetation_cover",
+	"type_of_high_vegetation",
+	"type_of_low_vegetation",
 ]
 
 load_dotenv(BASE_DIR / ".env")
