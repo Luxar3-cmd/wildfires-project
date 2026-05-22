@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 import unicodedata
 from pathlib import Path
@@ -11,30 +10,50 @@ from typing import Any
 import pandas as pd
 
 from src.config import CONAF_RAW_DIR, DATA_INTERIM, DATA_PROCESSED, ERA5_RAW_DIR
+from src.era5_extractor import EXPECTED_KEYS, INVARIANT_KEYS
+from src.utils import _json_safe_default
+
+# xarray es opcional: si no está instalado, el inventario ERA5 se genera sin
+# inspeccionar el contenido de los NetCDF (solo tamaños).
+try:
+	import xarray as xr
+	_xr_available = True
+except ImportError:
+	_xr_available = False
 
 CONAF_CLEAN_PARQUET = DATA_INTERIM / "conaf_clean.parquet"
-FEATURES_REPORT_JSON = DATA_PROCESSED / "features_report.json"
-FEATURES_REPORT_MD = DATA_PROCESSED / "features_report.md"
 
-ERA5_RAW_COLUMNS = {"t2m", "d2m", "u10", "v10", "tp", "ssrd"}
-ERA5_DERIVED_COLUMNS = {"t2m_celsius", "d2m_celsius", "relative_humidity", "wind_speed", "wind_direction", "tp_mm"}
+# Conjuntos de columnas ERA5 para la clasificación de roles.
+# Derivados dinámicamente desde era5_extractor para mantener coherencia al agregar variables.
+ERA5_RAW_COLUMNS = set(EXPECTED_KEYS)
+ERA5_INVARIANT_COLUMNS = set(INVARIANT_KEYS)
+ERA5_DERIVED_COLUMNS = {
+	"t2m_celsius", "d2m_celsius",
+	"stl1_celsius", "stl2_celsius", "stl3_celsius", "stl4_celsius",
+	"relative_humidity", "vpd_hpa",
+	"wind_speed", "wind_direction",
+	"tp_mm",
+}
 JOIN_QUALITY_COLUMNS = {"era5_dist_km", "era5_dt_hours", "era5_match_quality"}
 
-
-def _json_default(value: Any) -> Any:
-	if pd.isna(value) if not isinstance(value, (list, tuple, dict)) else False:
-		return None
-	if hasattr(value, "isoformat"):
-		return value.isoformat()
-	if hasattr(value, "item"):
-		return value.item()
-	return str(value)
+# Lookup para _role_for_column: columnas con rol fijo por nombre canónico.
+# Las columnas que no aparecen aquí se clasifican por prefijo o por pertenencia a los sets ERA5.
+_ROLE_LOOKUP: dict[str, str] = {
+	"region": "conaf_context", "provincia": "conaf_context", "comuna": "conaf_context",
+	"temporada": "conaf_context", "nombre": "conaf_context",
+	"fecha": "time", "hora_inicio": "time", "fecha_hora_inicio": "time",
+	"fecha_inicio": "time", "inicio": "time",
+	"latitud": "location", "longitud": "location", "datum": "location", "geometry": "location",
+	"superficie_quemada_total_ha": "candidate_target",
+	"causa": "conaf_feature", "alerta": "conaf_feature",
+	"escenario": "conaf_feature", "duracion_minutos": "conaf_feature",
+}
 
 
 def _safe_json_dump(payload: dict[str, Any], path: Path) -> None:
 	path.parent.mkdir(parents=True, exist_ok=True)
 	path.write_text(
-		json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default),
+		json.dumps(payload, ensure_ascii=False, indent=2, default=_json_safe_default),
 		encoding="utf-8",
 	)
 
@@ -45,39 +64,48 @@ def _read_csv(path: Path) -> pd.DataFrame:
 	return pd.read_csv(path, sep=sep, low_memory=False)
 
 
+def _canonical_name(name: str) -> str:
+	"""Normaliza un nombre de columna a snake_case ASCII minúsculo.
+
+	Flujo: unicode NFKD → strip acentos → lowercase → reemplaza caracteres
+	no alfanuméricos por _ → strip underscores extremos.
+	"""
+	value = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+	value = value.lower().strip()
+	value = value.replace("[ha]", "ha")
+	value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
+	return value
+
+
 def _role_for_column(name: str) -> str:
+	"""Clasifica una columna según su rol en el pipeline.
+
+	Roles:
+	  conaf_context    : identificadores del evento (región, temporada, nombre)
+	  time             : columnas de fecha/hora
+	  location         : coordenadas geográficas
+	  candidate_target : variable objetivo del modelo (superficie_quemada_total_ha)
+	  conaf_feature    : otras variables del evento (causa, alerta, duración, vegetación)
+	  era5_raw         : variables meteorológicas crudas de ERA5-Land
+	  era5_invariant   : variables estáticas de ERA5 (tipo suelo, cobertura)
+	  era5_derived     : features calculadas a partir de ERA5 (Celsius, VPD, etc.)
+	  join_quality     : métricas de calidad del nearest-neighbor match
+	  unknown          : no clasificada
+	"""
 	canonical = _canonical_name(name)
-	if canonical in {"region", "provincia", "comuna", "temporada", "nombre"}:
-		return "conaf_context"
-	if canonical in {"fecha", "hora_inicio", "fecha_hora_inicio", "fecha_inicio", "inicio"}:
-		return "time"
-	if canonical == "superficie_quemada_total_ha":
-		return "candidate_target"
-	if canonical.startswith("superficie_quemada_") or canonical in {"causa", "alerta", "escenario", "duracion_minutos"}:
+	if canonical in _ROLE_LOOKUP:
+		return _ROLE_LOOKUP[canonical]
+	if canonical.startswith("superficie_quemada_"):
 		return "conaf_feature"
-	if canonical in {"latitud", "longitud", "datum", "geometry"}:
-		return "location"
 	if canonical in ERA5_RAW_COLUMNS:
 		return "era5_raw"
+	if canonical in ERA5_INVARIANT_COLUMNS:
+		return "era5_invariant"
 	if canonical in ERA5_DERIVED_COLUMNS:
 		return "era5_derived"
 	if canonical in JOIN_QUALITY_COLUMNS:
 		return "join_quality"
 	return "unknown"
-
-
-def _canonical_name(name: str) -> str:
-	value = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
-	value = value.lower().strip()
-	value = value.replace("[ha]", "ha")
-	value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
-	value = value.replace("superficie_quemada_", "superficie_quemada_")
-	value = value.replace("duracion_minutos", "duracion_minutos")
-	if value == "hora_inicio":
-		return value
-	if value == "superficie_quemada_total_ha":
-		return value
-	return value
 
 
 def _source_for_column(name: str, dataset_kind: str) -> str:
@@ -86,8 +114,8 @@ def _source_for_column(name: str, dataset_kind: str) -> str:
 		return "conaf"
 	if role == "era5_raw":
 		return "era5_land"
-	if role == "era5_derived":
-		return "derived_from_era5"
+	if role in {"era5_invariant", "era5_derived"}:
+		return "era5_land"
 	if role == "join_quality":
 		return "pipeline"
 	if dataset_kind == "era5_netcdf":
@@ -96,6 +124,11 @@ def _source_for_column(name: str, dataset_kind: str) -> str:
 
 
 def _clean_value(value: Any) -> Any:
+	"""Convierte un valor a un tipo JSON-serializable.
+
+	Más exhaustivo que _json_safe_default: también maneja bytes y float inf.
+	Se usa al construir ejemplos y estadísticas del perfil de columnas.
+	"""
 	if value is None:
 		return None
 	try:
@@ -107,8 +140,10 @@ def _clean_value(value: Any) -> Any:
 		value = value.item()
 	if isinstance(value, bytes):
 		return value.hex()[:64]
-	if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-		return None
+	if isinstance(value, float):
+		import math
+		if math.isnan(value) or math.isinf(value):
+			return None
 	if hasattr(value, "isoformat"):
 		return value.isoformat()
 	return value
@@ -164,27 +199,21 @@ def _profile_parquet(path: Path, dataset_kind: str) -> dict[str, Any]:
 
 def _profile_era5_files() -> dict[str, Any]:
 	files = sorted(ERA5_RAW_DIR.glob("*.nc"))
+	base = {
+		"name": "ERA5 NetCDF",
+		"path": str(ERA5_RAW_DIR),
+		"kind": "era5_netcdf_inventory",
+	}
 	if not files:
+		return {**base, "files": [], "note": "No hay archivos NetCDF ERA5 locales."}
+	if not _xr_available:
 		return {
-			"name": "ERA5 NetCDF",
-			"path": str(ERA5_RAW_DIR),
-			"kind": "era5_netcdf_inventory",
-			"files": [],
-			"note": "No hay archivos NetCDF ERA5 locales.",
-		}
-
-	inventory = []
-	try:
-		import xarray as xr
-	except ImportError:
-		return {
-			"name": "ERA5 NetCDF",
-			"path": str(ERA5_RAW_DIR),
-			"kind": "era5_netcdf_inventory",
+			**base,
 			"files": [{"path": str(path), "bytes": path.stat().st_size} for path in files],
 			"note": "xarray no está instalado; no se inspeccionaron variables.",
 		}
 
+	inventory = []
 	for path in files:
 		with xr.open_dataset(path) as ds:
 			inventory.append({
@@ -206,12 +235,7 @@ def _profile_era5_files() -> dict[str, Any]:
 					for name, var in ds.data_vars.items()
 				],
 			})
-	return {
-		"name": "ERA5 NetCDF",
-		"path": str(ERA5_RAW_DIR),
-		"kind": "era5_netcdf_inventory",
-		"files": inventory,
-	}
+	return {**base, "files": inventory}
 
 
 def _artifact_row(artifact: dict[str, Any]) -> str:
@@ -277,12 +301,21 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
 
 
 def generate_feature_report(enriched_path: Path, out_dir: Path = DATA_PROCESSED) -> dict[str, Any]:
+	"""Genera reporte JSON + Markdown con el perfil de features de todos los artefactos.
+
+	Convención de nombres de archivo en CONAF_RAW_DIR:
+	  - stems de 8 dígitos (e.g. "00234567"): archivos de temporada (un CSV por temporada).
+	  - otros stems: índice o metadata del dataset.
+	Esta convención viene del formato de Dataverse / itrend.
+	"""
 	from datetime import datetime, timezone
 
+	# Archivos de temporada: stems numéricos de exactamente 8 dígitos
 	season_paths = sorted(
 		path for path in CONAF_RAW_DIR.glob("*.csv")
 		if re.fullmatch(r"\d{8}", path.stem)
 	)
+	# Archivos de índice o metadata: cualquier otro CSV en el mismo directorio
 	index_paths = sorted(
 		path for path in CONAF_RAW_DIR.glob("*.csv")
 		if not re.fullmatch(r"\d{8}", path.stem)
@@ -294,20 +327,15 @@ def generate_feature_report(enriched_path: Path, out_dir: Path = DATA_PROCESSED)
 	enriched = _profile_parquet(enriched_path, "enriched") if enriched_path.exists() else None
 	era5 = _profile_era5_files()
 
+	_ARTIFACT_KEYS = ("name", "kind", "path", "rows", "columns")
 	artifacts = []
-	artifacts.extend({
-		"name": artifact["name"],
-		"kind": artifact["kind"],
-		"path": artifact["path"],
-		"rows": artifact["rows"],
-		"columns": artifact["columns"],
-	} for artifact in conaf_seasons)
+	artifacts.extend({k: artifact[k] for k in _ARTIFACT_KEYS} for artifact in conaf_seasons)
 	if conaf_index:
-		artifacts.append({key: conaf_index[key] for key in ("name", "kind", "path", "rows", "columns")})
+		artifacts.append({k: conaf_index[k] for k in _ARTIFACT_KEYS})
 	if conaf_clean:
-		artifacts.append({key: conaf_clean[key] for key in ("name", "kind", "path", "rows", "columns")})
+		artifacts.append({k: conaf_clean[k] for k in _ARTIFACT_KEYS})
 	if enriched:
-		artifacts.append({key: enriched[key] for key in ("name", "kind", "path", "rows", "columns")})
+		artifacts.append({k: enriched[k] for k in _ARTIFACT_KEYS})
 
 	report = {
 		"generated_at": datetime.now(timezone.utc).isoformat(),

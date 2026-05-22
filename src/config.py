@@ -18,30 +18,46 @@ ERA5_RAW_DIR = DATA_RAW / "era5"
 
 CONAF_DATASET_DOI = "doi:10.71578/UXAUN5"
 
+# Bounding box de la zona de estudio: Maule, Biobío, Araucanía y Los Ríos.
+# Se elige este recorte porque concentra >70 % de los eventos CONAF relevantes
+# para el modelo XAI y permite descargas ERA5 mucho más pequeñas que Chile completo.
 CHILE_BBOX = {"north": -34.0, "west": -74.0, "south": -42.0, "east": -70.0}
 
+# Variables temporales de ERA5-Land descargadas en cada request.
+# Se usan los nombres largos del API de CDS; era5_extractor.py los mapea a los
+# short-names que expone xarray al leer el NetCDF.
 ERA5_VARIABLES = [
+	# Temperatura y punto de rocío
 	"2m_temperature",
 	"2m_dewpoint_temperature",
-	"10m_u_component_of_wind",
-	"10m_v_component_of_wind",
-	"total_precipitation",
-	"surface_solar_radiation_downwards",
+	# Temperatura del suelo por capas (0–7 cm, 7–28 cm, 28–100 cm, 100–289 cm)
 	"soil_temperature_level_1",
 	"soil_temperature_level_2",
 	"soil_temperature_level_3",
 	"soil_temperature_level_4",
+	# Humedad del suelo volumétrica (mismas capas que temperatura)
 	"volumetric_soil_water_layer_1",
 	"volumetric_soil_water_layer_2",
 	"volumetric_soil_water_layer_3",
 	"volumetric_soil_water_layer_4",
+	# Viento
+	"10m_u_component_of_wind",
+	"10m_v_component_of_wind",
+	# Precipitación y radiación
+	"total_precipitation",
+	"surface_solar_radiation_downwards",
+	# Evaporación (tres definiciones distintas útiles para balance hídrico)
 	"evaporation_from_vegetation_transpiration",
 	"potential_evaporation",
 	"total_evaporation",
+	# Índice de área foliar (mide densidad del dosel vegetal)
 	"leaf_area_index_high_vegetation",
 	"leaf_area_index_low_vegetation",
 ]
 
+# Variables invariantes de ERA5-Land: campos estáticos que no cambian con el tiempo
+# (tipo de suelo, fracción de cobertura vegetal, etc.). Se descargan una sola vez
+# con un único timestamp y se almacenan en un NetCDF separado.
 ERA5_INVARIANTS = [
 	"soil_type",
 	"land_sea_mask",

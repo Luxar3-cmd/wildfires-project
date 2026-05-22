@@ -47,6 +47,9 @@ def _local_to_utc_naive(ts: pd.Series) -> pd.Series:
 	if isinstance(values.dtype, pd.DatetimeTZDtype):
 		return values.dt.tz_convert("UTC").dt.tz_localize(None)
 
+	# ambiguous="NaT": durante el cambio de hora en Chile, un instante local
+	# puede corresponder a dos momentos UTC distintos. Se marca NaT en vez de
+	# elegir arbitrariamente cuál de los dos usar.
 	localized = values.dt.tz_localize(CONAF_LOCAL_TIMEZONE, ambiguous="NaT", nonexistent="shift_forward")
 	return localized.dt.tz_convert("UTC").dt.tz_localize(None)
 
@@ -118,7 +121,12 @@ def _download_via_dataverse(dest_dir: Path) -> Path:
 
 
 def _find_dataset_files(dest_dir: Path) -> list[Path]:
-	"""Localiza archivos del dataset por prioridad de formato."""
+	"""Localiza archivos del dataset por prioridad de formato.
+
+	Convención del dataset CONAF en Dataverse (itrend): los archivos de temporada
+	tienen stems numéricos de exactamente 8 dígitos (e.g. "00234567.csv"). Cualquier
+	otro CSV (índice, metadata) tiene stem no numérico o de longitud distinta.
+	"""
 	for ext in ("*.csv", "*.geojson", "*.shp"):
 		candidates = sorted(
 			path for path in dest_dir.rglob(ext)
@@ -189,6 +197,10 @@ def _clean(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 	if fecha_inicio and hora_inicio:
 		hora = gdf[hora_inicio].astype("string").str.strip()
 		hora = hora.mask(hora.str.lower().isin({"nan", "nat", "none"}), "")
+		# La columna hora_inicio llega como string de formato variable ("8:30", "08:30", "8:30:00").
+		# Se concatena en string en vez de usar aritmética de Timestamp porque pd.to_datetime
+		# tolera múltiples formatos de hora en una misma pasada, mientras que timedelta requiere
+		# parsear la hora a mano primero.
 		combined = (
 			gdf[fecha_inicio].dt.strftime("%Y-%m-%d").fillna("") + " " + hora.fillna("")
 		).str.strip()
@@ -215,6 +227,14 @@ def _clean(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def _looks_like_lost_time_component(gdf: pd.DataFrame) -> bool:
+	"""Detecta si el cache tiene timestamps truncados a medianoche.
+
+	Versiones antiguas del dataset CONAF tenían la hora_inicio en una columna
+	separada que se perdía durante la exportación a Parquet. El síntoma es que
+	todos los fecha_hora_inicio terminan en 00:00 aunque hora_inicio tenga
+	valores reales (no cero). Si esto ocurre, se descarta el cache y se
+	reconstruye concatenando fecha + hora desde los crudos.
+	"""
 	hora_inicio = next((c for c in gdf.columns if c in {"hora_inicio", "hora"}), None)
 	if not hora_inicio or "fecha_hora_inicio" not in gdf.columns:
 		return False

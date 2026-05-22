@@ -1,7 +1,9 @@
 """Orquestación: une CONAF con ERA5 puntual (mismo timestamp y ubicación).
 
-Optimización: agrupa los incendios por año y abre solo el NetCDF de ese año
-(en vez de cargar 19 años a la vez).
+Optimización de memoria: agrupa los incendios por (año, mes) y abre solo el
+NetCDF de ese período, en vez de cargar todos los archivos a la vez.
+Cadena de fallback para encontrar el NetCDF: primero busca el mensual, luego
+el anual, y si ninguno existe marca los registros como "missing".
 """
 from __future__ import annotations
 
@@ -60,7 +62,15 @@ def enrich_conaf_with_era5(
 	reporter: Reporter | None = None,
 	bbox: dict | None = None,
 ) -> pd.DataFrame:
-	"""Enriquece cada incendio con las variables ERA5 del mismo (lat, lon, ts)."""
+	"""Enriquece cada incendio con las variables ERA5 del mismo (lat, lon, ts).
+
+	Flujo:
+	1. Filtra registros con lat/lon/ts válidos y dentro del bbox.
+	2. Para cada (año, mes) único, abre el NetCDF correspondiente y extrae
+	   el grid point más cercano en tiempo y espacio para cada incendio.
+	3. Calcula features derivadas (temp Celsius, VPD, velocidad de viento, etc.).
+	4. Si existe el NetCDF de invariantes, añade variables estáticas por coordenada.
+	"""
 	out_path = out_path or ENRICHED_PARQUET
 	bbox = bbox or CHILE_BBOX
 
@@ -70,7 +80,8 @@ def enrich_conaf_with_era5(
 	df = pd.DataFrame(conaf.drop(columns="geometry", errors="ignore")).copy().reset_index(drop=True)
 	df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
 
-	# Filtra registros enriquecibles
+	# Separa registros enriquecibles (tienen coords + ts y caen dentro del bbox)
+	# de los que están fuera de cobertura o tienen datos faltantes
 	valid_point_mask = df[[ts_col, lat_col, lon_col]].notna().all(axis=1)
 	coverage_mask = _bbox_mask(df, lat_col, lon_col, bbox)
 	enrich_mask = valid_point_mask & coverage_mask
@@ -111,9 +122,11 @@ def enrich_conaf_with_era5(
 			bbox=bbox,
 		)
 
+	# Itera por (año, mes) para mantener solo 1 NetCDF abierto a la vez en memoria
 	for (year, month), group in df[enrich_mask].groupby(["_year", "_month"]):
 		year = int(year)
 		month = int(month)
+		# Fallback: primero busca el NetCDF mensual, si no existe busca el anual
 		nc_path = era5_month_path(year, month, era5_dir)
 		if not nc_path.exists():
 			nc_path = era5_year_path(year, era5_dir)
@@ -150,7 +163,7 @@ def enrich_conaf_with_era5(
 				results[idx] = extract_point(ds, row[lat_col], row[lon_col], row[ts_col])
 		_emit(reporter, f"Mes {year}-{month:02d} enriquecido", year=year, month=month, rows=int(len(group)))
 
-	# Llena los registros no enriquecibles con missing
+	# Rellena cualquier registro que haya quedado sin resultado
 	missing_template = {k: None for k in EXPECTED_KEYS} | {
 		"era5_dist_km": None,
 		"era5_dt_hours": None,
@@ -163,8 +176,13 @@ def enrich_conaf_with_era5(
 	era5_cols = EXPECTED_KEYS + ["era5_dist_km", "era5_dt_hours", "era5_match_quality"]
 	era5_df = pd.DataFrame(results, index=df.index).reindex(columns=era5_cols)
 	enriched = pd.concat([df.drop(columns=["_year", "_month"]), era5_df], axis=1)
+
+	# Features derivadas (temp Celsius, VPD, velocidad de viento, etc.)
+	# Se calculan antes de añadir invariantes porque no dependen de ellas
 	enriched = add_all(enriched)
 
+	# Añade variables invariantes (tipo de suelo, cobertura vegetal, etc.)
+	# Se hace join por coordenada, sin dimensión temporal
 	inv_path = era5_invariants_path()
 	if inv_path.exists():
 		with xr.open_dataset(inv_path) as ds_inv:
