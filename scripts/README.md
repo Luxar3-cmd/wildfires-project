@@ -1,0 +1,46 @@
+# `scripts/` — entrypoints CLI
+
+## Archivos
+
+| Archivo | Rol |
+|---|---|
+| `preprocess.py` | Pipeline completo CONAF + ERA5 → parquet enriquecido + sidecars. Con `--download-only` baja ERA5 acotado a los días con eventos CONAF sin enriquecer. |
+| `megafire_thresholds.py` | Calcula umbrales estadísticos de megaincendio (P95/P98/P99, log-normal `μ+kσ`, Pareto-80%, benchmarks 200/500/1000 ha) sobre `data/processed/conaf_enriched_latest.parquet`. Genera tabla impresa + `data/processed/megafire_thresholds.md`. |
+
+## Ejemplos
+
+```bash
+# Pipeline completo: descarga + enriquecimiento (años acotados)
+python scripts/preprocess.py --years 2016-2017
+
+# Solo descarga ERA5 acotada a días con eventos CONAF, a un directorio separado
+python scripts/preprocess.py --years 2018-2018 --download-only --era5-dir data/raw/era5_conaf_days
+
+# Re-enriquecer asumiendo que los NetCDF ya están en disco
+python scripts/preprocess.py --years 2016-2017 --skip-download
+
+# Forzar re-descarga del CSV CONAF (ignora cache .parquet)
+python scripts/preprocess.py --years 2016-2017 --refresh-conaf
+
+# Calcular umbrales de megaincendio sobre el enriched más reciente
+python scripts/megafire_thresholds.py
+```
+
+## Outputs típicos
+
+`preprocess.py` produce, dentro de `data/processed/`:
+
+- `conaf_enriched_<start>_<end>.parquet` — output versionado.
+- `conaf_enriched_latest.parquet` — copia simbólica del último run.
+- `<archivo>.attribution.json` — sidecar de atribución CC-BY (fuentes + parámetros del run).
+- `<archivo>.features.json` — perfil de columnas en JSON.
+- `features_report.md` + `features_report.json` — reporte global con artefactos, inventario ERA5 y perfil por columna.
+
+`megafire_thresholds.py` produce:
+
+- `data/processed/megafire_thresholds.md` — tabla por región con umbrales calculados, recomendación y benchmark contra literatura.
+
+## Notas
+
+- Las credenciales CDS (Copernicus) e itrend (Dataverse) se leen desde `.env` en raíz. Ver `.env.example`.
+- El pipeline usa logging estándar — sin dashboards ni callbacks externos. Para output más verboso: `PYTHONLOGLEVEL=DEBUG python scripts/preprocess.py …`.
