@@ -12,6 +12,7 @@ DATA_DIR = BASE_DIR / "data"
 DATA_RAW = DATA_DIR / "raw"
 DATA_INTERIM = DATA_DIR / "interim"
 DATA_PROCESSED = DATA_DIR / "processed"
+DATA_MODELS = DATA_DIR / "models"
 
 CONAF_RAW_DIR = DATA_RAW / "conaf"
 ERA5_RAW_DIR = DATA_RAW / "era5"
@@ -46,13 +47,14 @@ ERA5_VARIABLES = [
 	# Precipitación y radiación
 	"total_precipitation",
 	"surface_solar_radiation_downwards",
-	# Evaporación (tres definiciones distintas útiles para balance hídrico)
-	"evaporation_from_vegetation_transpiration",
+	# Evaporación
 	"potential_evaporation",
 	"total_evaporation",
 	# Índice de área foliar (mide densidad del dosel vegetal)
 	"leaf_area_index_high_vegetation",
 	"leaf_area_index_low_vegetation",
+	# Al final para quedar sola en batch 4 (CDS la silencia si va mezclada con otras)
+	"evaporation_from_vegetation_transpiration",
 ]
 
 # Variables invariantes de ERA5-Land: campos estáticos que no cambian con el tiempo
@@ -85,7 +87,7 @@ CDSAPI_KEY = _env("CDSAPI_KEY")
 
 
 def ensure_dirs() -> None:
-	for d in (DATA_RAW, DATA_INTERIM, DATA_PROCESSED, CONAF_RAW_DIR, ERA5_RAW_DIR):
+	for d in (DATA_RAW, DATA_INTERIM, DATA_PROCESSED, DATA_MODELS, CONAF_RAW_DIR, ERA5_RAW_DIR):
 		d.mkdir(parents=True, exist_ok=True)
 
 
