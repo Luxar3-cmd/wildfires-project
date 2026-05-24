@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline de Etiquetado de Megaincendios — Proyecto XAI</title>
+<style>
+  :root {
+    --color-primary: #1e40af;
+    --color-primary-dark: #1e3a8a;
+    --color-accent: #ea580c;
+    --color-fire: #b91c1c;
+    --color-text: #0f172a;
+    --color-text-secondary: #475569;
+    --color-bg: #ffffff;
+    --color-sidebar-bg: #f8fafc;
+    --color-code-bg: #f1f5f9;
+    --color-border: #e2e8f0;
+    --color-border-strong: #cbd5e1;
+    --color-success: #15803d;
+    --color-warning-bg: #fff7ed;
+    --color-warning-border: #fdba74;
+    --color-info-bg: #eff6ff;
+    --color-info-border: #93c5fd;
+    --color-danger-bg: #fef2f2;
+    --color-danger-border: #fca5a5;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --font-mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.65;
+    color: var(--color-text);
+    background: var(--color-bg);
+  }
+  .container {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 0;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  /* Sidebar */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--color-sidebar-bg);
+    border-right: 1px solid var(--color-border);
+    padding: 1.5rem 1.25rem;
+  }
+  .sidebar h2 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-secondary);
+    margin: 0 0 0.75rem 0;
+  }
+  .sidebar h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-secondary);
+    margin: 1.5rem 0 0.5rem 0;
+  }
+  .sidebar nav ol {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+    counter-reset: toc;
+  }
+  .sidebar nav ol li {
+    counter-increment: toc;
+    margin: 0;
+  }
+  .sidebar nav ol li a {
+    display: block;
+    padding: 0.4rem 0.5rem;
+    color: var(--color-text);
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: background 0.15s;
+  }
+  .sidebar nav ol li a:hover {
+    background: #e2e8f0;
+    color: var(--color-primary);
+  }
+  .sidebar nav ol li a::before {
+    content: counter(toc) ". ";
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    margin-right: 0.25rem;
+  }
+  .sidebar .apend ol li a::before {
+    content: counter(toc, upper-alpha) ". ";
+  }
+  .sidebar .apend ol { counter-reset: toc; }
+  .sidebar .brand {
+    font-weight: 600;
+    color: var(--color-primary);
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+  }
+  .sidebar .brand .subtitle {
+    font-weight: 400;
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-top: 0.25rem;
+  }
+  /* Main content */
+  .content {
+    padding: 3rem 4rem;
+    max-width: 900px;
+  }
+  header.doc-header {
+    margin-bottom: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 2px solid var(--color-border);
+  }
+  header.doc-header h1 {
+    font-size: 2.25rem;
+    margin: 0 0 0.5rem 0;
+    color: var(--color-primary-dark);
+    line-height: 1.2;
+  }
+  header.doc-header .subtitle {
+    font-size: 1.1rem;
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+  header.doc-header .meta {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+  }
+  /* Section styles */
+  section { margin-bottom: 4rem; }
+  h2 {
+    font-size: 1.75rem;
+    color: var(--color-primary-dark);
+    margin: 2rem 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  h3 {
+    font-size: 1.25rem;
+    color: var(--color-primary);
+    margin: 1.5rem 0 0.75rem 0;
+  }
+  h4 {
+    font-size: 1.05rem;
+    color: var(--color-text);
+    margin: 1rem 0 0.5rem 0;
+  }
+  p { margin: 0.75rem 0; }
+  a { color: var(--color-primary); }
+  a:hover { color: var(--color-primary-dark); }
+  ul, ol { padding-left: 1.5rem; }
+  li { margin: 0.25rem 0; }
+  strong { color: var(--color-text); font-weight: 600; }
+  code {
+    background: var(--color-code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    color: var(--color-fire);
+  }
+  pre {
+    background: var(--color-code-bg);
+    padding: 1rem 1.25rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    border-left: 3px solid var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    color: var(--color-text);
+    font-size: inherit;
+  }
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  thead {
+    background: var(--color-primary);
+    color: white;
+  }
+  thead th {
+    text-align: left;
+    padding: 0.65rem 0.85rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  tbody td {
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid var(--color-border);
+  }
+  tbody tr:nth-child(even) { background: #fafbfc; }
+  tbody tr:hover { background: var(--color-info-bg); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+  /* Tedim table colors */
+  .tedim-cat-1 { background: #16a34a !important; color: white; font-weight: 600; }
+  .tedim-cat-2 { background: #eab308 !important; color: white; font-weight: 600; }
+  .tedim-cat-3 { background: #f97316 !important; color: white; font-weight: 600; }
+  .tedim-cat-4 { background: #dc2626 !important; color: white; font-weight: 600; }
+  .tedim-cat-5 { background: #b91c1c !important; color: white; font-weight: 600; }
+  .tedim-cat-6 { background: #991b1b !important; color: white; font-weight: 600; }
+  .tedim-cat-7 { background: #7f1d1d !important; color: white; font-weight: 600; }
+  .tedim-divider td {
+    background: #fce7f3;
+    border-top: 3px dashed #ec4899;
+    border-bottom: 3px dashed #ec4899;
+    text-align: center;
+    font-style: italic;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    padding: 0.4rem;
+  }
+  /* Callout boxes */
+  .callout {
+    padding: 1rem 1.25rem;
+    border-radius: 6px;
+    margin: 1.25rem 0;
+    border-left: 4px solid;
+  }
+  .callout-info { background: var(--color-info-bg); border-color: var(--color-info-border); }
+  .callout-warning { background: var(--color-warning-bg); border-color: var(--color-warning-border); }
+  .callout-danger { background: var(--color-danger-bg); border-color: var(--color-danger-border); }
+  .callout-justification { background: #f0f9ff; border-color: var(--color-primary); }
+  .callout-title {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.4rem;
+    display: block;
+  }
+  .callout-info .callout-title { color: var(--color-primary-dark); }
+  .callout-warning .callout-title { color: var(--color-accent); }
+  .callout-danger .callout-title { color: var(--color-fire); }
+  .callout-justification .callout-title { color: var(--color-primary-dark); }
+  /* Definition list */
+  dl {
+    background: var(--color-sidebar-bg);
+    padding: 1rem 1.25rem;
+    border-radius: 6px;
+    margin: 1rem 0;
+  }
+  dt {
+    font-weight: 600;
+    color: var(--color-primary-dark);
+    margin-top: 0.75rem;
+  }
+  dt:first-child { margin-top: 0; }
+  dd {
+    margin-left: 0;
+    margin-bottom: 0.5rem;
+    color: var(--color-text);
+  }
+  /* Quote */
+  blockquote {
+    border-left: 4px solid var(--color-primary);
+    margin: 1.25rem 0;
+    padding: 0.5rem 1rem;
+    background: var(--color-info-bg);
+    font-style: italic;
+    color: var(--color-text);
+  }
+  blockquote cite {
+    display: block;
+    font-style: normal;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    margin-top: 0.5rem;
+  }
+  /* Pipeline flow diagram */
+  .flow-diagram {
+    background: #fafbfc;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+  }
+  /* Refs */
+  .references li {
+    margin-bottom: 0.75rem;
+    line-height: 1.5;
+  }
+  .references .ref-num {
+    font-weight: 600;
+    color: var(--color-primary);
+  }
+  /* Footnotes / aside */
+  .small { font-size: 0.85rem; color: var(--color-text-secondary); }
+  /* Two-column table */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin: 1rem 0;
+  }
+  .two-col-card {
+    padding: 1rem 1.25rem;
+    border-radius: 6px;
+  }
+  .two-col-card.allowed {
+    background: #f0fdf4;
+    border-left: 4px solid var(--color-success);
+  }
+  .two-col-card.forbidden {
+    background: var(--color-danger-bg);
+    border-left: 4px solid var(--color-fire);
+  }
+  .two-col-card h4 {
+    margin-top: 0;
+    color: var(--color-text);
+  }
+  .two-col-card .reason {
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+    font-style: italic;
+  }
+  /* Anchor link icon */
+  .heading-anchor {
+    opacity: 0;
+    margin-left: 0.5rem;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-weight: 400;
+    transition: opacity 0.15s;
+  }
+  h2:hover .heading-anchor, h3:hover .heading-anchor { opacity: 1; }
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .container { grid-template-columns: 1fr; }
+    .sidebar { position: relative; height: auto; max-height: none; }
+    .content { padding: 2rem 1.5rem; }
+    .two-col { grid-template-columns: 1fr; }
+  }
+  /* Print */
+  @media print {
+    .sidebar { display: none; }
+    .container { display: block; }
+    .content { padding: 0; max-width: none; }
+    body { font-size: 11pt; }
+    h2 { page-break-after: avoid; }
+    pre, table, .callout, .flow-diagram { page-break-inside: avoid; }
+    a { color: black; text-decoration: none; }
+    a::after { content: " (" attr(href) ")"; font-size: 0.7em; color: #555; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<aside class="sidebar">
+  <div class="brand">
+    XAI · Megaincendios
+    <div class="subtitle">Pipeline de etiquetado</div>
+  </div>
+  <h2>Contenido</h2>
+  <nav>
+    <ol>
+      <li><a href="#contexto">Contexto y objetivo</a></li>
+      <li><a href="#glosario">Glosario técnico</a></li>
+      <li><a href="#tedim">Estándar internacional: Tedim 2018</a></li>
+      <li><a href="#problema">El problema del label en CONAF</a></li>
+      <li><a href="#estrategia">Estrategia de etiquetado</a></li>
+      <li><a href="#pipeline">Pipeline a prueba de tontos</a></li>
+      <li><a href="#features">Features para XGBoost</a></li>
+      <li><a href="#referencias">Referencias</a></li>
+    </ol>
+  </nav>
+  <h3>Apéndices</h3>
+  <nav class="apend">
+    <ol>
+      <li><a href="#ap-a">Glosario CONAF</a></li>
+      <li><a href="#ap-b">MODIS como feature: no</a></li>
+      <li><a href="#ap-c">Snippet Earth Engine</a></li>
+    </ol>
+  </nav>
+</aside>
+
+<main class="content">
+
+<header class="doc-header">
+  <h1>Pipeline de Etiquetado de Megaincendios</h1>
+  <p class="subtitle">Construcción del label binario para clasificación XGBoost desde datos CONAF + ERA5-Land</p>
+  <p class="meta">Proyecto XAI — Mayo 2026 · Documento técnico v1.0</p>
+</header>
+
+<!-- =================== SECCIÓN 1 =================== -->
+<section id="contexto">
+  <h2>1. Contexto y objetivo <a class="heading-anchor" href="#contexto">#</a></h2>
+
+  <h3>Pregunta del proyecto</h3>
+  <p>
+    Se requiere construir un modelo de clasificación binaria que prediga, en el momento de
+    ignición de un incendio forestal en Chile, si éste alcanzará comportamiento de
+    <strong>Extreme Wildfire Event (EWE)</strong> según el estándar internacional de
+    Tedim et al. 2018 — categoría 5+ con FLI ≥ 10.000 kW/m (label <strong>L2</strong>) — usando
+    exclusivamente las condiciones meteorológicas, geográficas y vegetativas presentes al inicio
+    del evento.
+  </p>
+
+  <div class="callout callout-info">
+    <span class="callout-title">Target objetivo vs proxy preliminar</span>
+    El <strong>target objetivo</strong> del proyecto es L2 (FLI ≥ 10.000 kW/m vía MODIS-FRP).
+    Mientras el pipeline MODIS-FRP no esté implementado se usa <strong>L1b</strong> como
+    <em>proxy preliminar</em>: threshold P99 regional sobre <code>superficie_quemada_total_ha</code>.
+    L1b permite (a) entrenar y validar el pipeline de modelado end-to-end, (b) servir como
+    análisis de sensibilidad en el paper. Este documento describe ambos labels en detalle,
+    pero la jerarquía es: L2 = objetivo científico, L1b = bootstrap operacional + sensitivity.
+  </div>
+
+  <p>El modelo objetivo es <strong>XGBoost</strong>, con dos casos de uso:</p>
+  <ol>
+    <li><strong>Operacional</strong>: «¿Este fuego que recién partió alcanzará comportamiento
+        EWE (cat 5+ de Tedim)?» — predicción ex-ante para asignación de recursos de combate
+        y declaración de alerta operacional.</li>
+    <li><strong>Interpretativo (XAI / SHAP)</strong>: «¿Qué condiciones climáticas predisponen a
+        megaincendio?» — análisis de drivers físicos para informar política pública.</li>
+  </ol>
+
+  <h3>Fuentes de datos</h3>
+  <ul>
+    <li><strong>CONAF</strong> (Corporación Nacional Forestal): registro oficial de
+        incendios forestales en Chile, originalmente 2002-2020 con ~110.000 eventos
+        georreferenciados, superficie quemada por tipo de vegetación, duración y contexto
+        operacional. Fuente:
+        <a href="https://datospararesiliencia.cl">Datos para Resiliencia / itrend</a>, DOI
+        <a href="https://doi.org/10.71578/UXAUN5">10.71578/UXAUN5</a>.
+        El dataset 2002-2020 está archivado en <code>data/archive/conaf_clean.parquet</code>.</li>
+    <li><strong>ERA5-Land</strong> (Copernicus / ECMWF): reanálisis climático horario a
+        ~9 km de resolución espacial, variables meteorológicas, de suelo y vegetativas.
+        Documentación: <a href="https://www.ecmwf.int/en/era5-land">ecmwf.int/era5-land</a>.</li>
+  </ul>
+
+  <div class="callout callout-info">
+    <span class="callout-title">Alcance del análisis</span>
+    Este documento describe el pipeline sobre el <strong>subset enriquecido con ERA5</strong>:
+    <code>data/processed/conaf_enriched_latest.parquet</code> — <strong>12.381 eventos</strong>
+    de las temporadas <strong>2016-2017</strong> (incluye el «incendio del siglo»), distribuidos
+    en 13 regiones con cobertura ERA5 dentro del bounding box trabajado. El subset acota la
+    ventana temporal a los años donde existe match espacio-temporal CONAF ↔ ERA5; ampliar a
+    otros años queda como trabajo futuro.
+  </div>
+
+  <h3>Por qué clasificación binaria y no regresión</h3>
+  <p>
+    Se descartó predecir directamente <code>superficie_quemada_total_ha</code> (regresión) por
+    dos razones:
+  </p>
+  <ul>
+    <li>La distribución es <em>power-law</em> con mediana 0.45 ha y máximo 159.812 ha —
+        un MSE estaría dominado por errores en los pocos eventos extremos.</li>
+    <li>El usuario final necesita una decisión operacional binaria, no una estimación
+        continua de hectáreas.</li>
+  </ul>
+  <p>
+    La pregunta de fondo es <em>clasificatoria</em>: ¿este fuego pertenece a la categoría
+    «manejable» o «catastrófica»? El umbral que separa estas categorías es la pieza central
+    del diseño y motiva todo este documento.
+  </p>
+
+  <div class="callout callout-info">
+    <span class="callout-title">Nota</span>
+    En adelante, «label», «etiqueta» y «target» se usan como sinónimos. Las features
+    («predictoras», «variables independientes») son lo que el modelo recibe como input.
+  </div>
+</section>
+
+<!-- =================== SECCIÓN 2 =================== -->
+<section id="glosario">
+  <h2>2. Glosario técnico <a class="heading-anchor" href="#glosario">#</a></h2>
+
+  <p>
+    Conceptos básicos para entender la literatura internacional de comportamiento del fuego
+    y el pipeline propuesto. Cada término incluye su fórmula (si aplica), unidades y rol.
+  </p>
+
+  <dl>
+    <dt>FLI — Fire Line Intensity (Intensidad del Frente de Llamas)</dt>
+    <dd>
+      Cantidad de energía liberada por unidad de tiempo y unidad de longitud del frente de fuego.
+      Es el parámetro más importante en clasificación de comportamiento extremo.<br>
+      <strong>Fórmula de Byram (1959)</strong>: <code>FLI = H · w · R</code><br>
+      donde <code>H</code> = calor de combustión efectivo (kJ/kg), <code>w</code> = carga de
+      combustible consumida (kg/m²), <code>R</code> = rate of spread (m/s).<br>
+      <strong>Unidades</strong>: kW/m (kilovatios por metro lineal de frente).<br>
+      <strong>Umbral crítico</strong>: ≥10.000 kW/m → el fuego excede la capacidad de control
+      con tecnología actual (incluso aviones tanqueros pesados).
+    </dd>
+
+    <dt>ROS — Rate of Spread</dt>
+    <dd>
+      Velocidad a la cual avanza el frente del fuego. Unidades típicas: m/min o m/s.
+      Es función de viento, pendiente, humedad del combustible, y propiedades del lecho
+      combustible. Modelo de referencia: Rothermel (1972).
+    </dd>
+
+    <dt>FL — Flame Length</dt>
+    <dd>
+      Longitud de la llama desde su base hasta la punta, medida a lo largo de su eje.
+      Unidades: metros. Se relaciona con FLI vía Alexander (1982):
+      <code>FLI ≈ 259.833 · FL<sup>2.174</sup></code>. Permite estimar FLI sin medir
+      directamente ROS y carga.
+    </dd>
+
+    <dt>FRP — Fire Radiative Power</dt>
+    <dd>
+      Potencia electromagnética emitida por un fuego en la banda media-infrarroja (3.9 μm),
+      medida desde sensores satelitales. Unidades: MW (megavatios por pixel).
+      Es proporcional a la tasa de consumo de biomasa y, indirectamente, a FLI
+      (Wooster et al. 2003). <strong>Ventaja clave</strong>: medible desde el espacio,
+      cobertura global, sin necesidad de instrumentación in situ.
+    </dd>
+
+    <dt>MODIS — Moderate Resolution Imaging Spectroradiometer</dt>
+    <dd>
+      Sensor multi-banda a bordo de los satélites NASA <strong>Terra</strong> (lanzado 1999,
+      operativo desde 2000) y <strong>Aqua</strong> (lanzado 2002). Resolución espacial nominal
+      1 km para detección de fuegos. Pasa sobre Chile ~4 veces al día (2 Terra + 2 Aqua,
+      mañana/tarde y noche). <strong>Productos relevantes</strong>:
+      <ul>
+        <li><code>MOD14</code> (Terra) y <code>MYD14</code> (Aqua): swath fire pixels — detección
+            instantánea de hotspots con FRP.</li>
+        <li><code>MOD14A1</code>/<code>MYD14A1</code>: composite diario — más fácil de consultar
+            vía Google Earth Engine.</li>
+      </ul>
+      <strong>Limitación</strong>: fuegos &lt;~50 ha no son detectados consistentemente
+      (sub-pixel mixing), y la cobertura se interrumpe con nubosidad.
+    </dd>
+
+    <dt>PyroCb — Pyrocumulonimbus</dt>
+    <dd>
+      Nube cumulonimbus generada por la columna convectiva de un fuego de muy alta intensidad.
+      Puede alcanzar la tropopausa (15 km), producir rayos, downdrafts y spotting masivo.
+      Es una <strong>firma inequívoca de Extreme Fire Behavior (EFB)</strong>.
+    </dd>
+
+    <dt>Spotting</dt>
+    <dd>
+      Ignición de nuevos focos secundarios cuando el fuego primario lanza pavesas o brasas
+      transportadas por la columna convectiva o el viento. Distancia varía desde decenas de
+      metros (cat 2-3 Tedim) hasta &gt;5 km en firestorms (cat 7). Para fuegos cat 5+
+      el spotting domina la propagación, más que el avance del frente.
+    </dd>
+
+    <dt>EFB — Extreme Fire Behavior</dt>
+    <dd>
+      Conjunto de manifestaciones de comportamiento no-controlable: crown fire, PyroCb,
+      downbursts, spotting masivo, frente errático. Cualitativo; categorías 5+ de Tedim
+      lo presentan parcialmente, categoría 7 lo presenta plenamente.
+    </dd>
+
+    <dt>EWE — Extreme Wildfire Event</dt>
+    <dd>
+      Terminología propuesta por Tedim et al. (2018) para incendios que superan la
+      <strong>capacidad de control con tecnología actual</strong>. Se diferencia
+      operacionalmente de <em>megafire</em> y <em>large fire</em> al no apoyarse en tamaño
+      sino en comportamiento. Definición cuantitativa:
+      <strong>FLI ≥ 10.000 kW/m + ROS &gt; 50 m/min + spotting &gt; 1 km + comportamiento errático</strong>.
+    </dd>
+
+    <dt>Terminología comparada</dt>
+    <dd>
+      <ul>
+        <li><strong>Large Fire (LF)</strong>: definido por tamaño, con umbral variable según
+            país (100 ha Europa, 1.000 ha Australia, 4.950 ha boreal Ontario).</li>
+        <li><strong>Megafire</strong>: tamaño + impacto. NIFC (US) usa 40.469 ha
+            (100.000 acres); EU MEGAFIREs y España usan 500 ha. <em>Sin consenso</em>.</li>
+        <li><strong>EWE</strong>: comportamiento físico (FLI, ROS, spotting). El paper Tedim
+            argumenta que es la terminología más rigurosa al ser independiente de la
+            geografía.</li>
+      </ul>
+    </dd>
+  </dl>
+</section>
+
+<!-- =================== SECCIÓN 3 =================== -->
+<section id="tedim">
+  <h2>3. Estándar internacional: Tedim et al. 2018 <a class="heading-anchor" href="#tedim">#</a></h2>
+
+  <p>
+    El paper <em>«Defining Extreme Wildfire Events: Difficulties, Challenges, and Impacts»</em>
+    (Tedim et al. 2018, <em>Fire</em> MDPI 1(1):9) es el documento de referencia internacional
+    más citado para definición operacional de incendios extremos. Es un Concept Paper que sintetiza
+    literatura interdisciplinaria y propone una taxonomía de 7 categorías. Disponible
+    localmente en <code>references/Tedim2018_DefiningEWE.pdf</code>.
+  </p>
+
+  <h3>3.1 Definición operacional de EWE</h3>
+  <blockquote>
+    «A pyro-convective phenomenon overwhelming capacity of control (fireline intensity
+    currently assumed ≥ 10,000 kWm⁻¹; rate of spread &gt;50 m/min; exhibiting spotting
+    distance &gt;1 km, and erratic and unpredictable fire behavior and spread). It represents
+    a heightened threat to crews, population, assets, and natural values, and likely causes
+    relevant negative socio-economic and environmental impacts.»
+    <cite>Tedim et al. 2018, p. 10</cite>
+  </blockquote>
+
+  <p>
+    La clave: <strong>EWE se define por comportamiento del fuego, no por tamaño</strong>.
+    El umbral fundamental es <code>FLI ≥ 10.000 kW/m</code> porque a partir de ese punto
+    el control con tecnología actual deja de ser viable, incluso con water bombers pesados.
+  </p>
+
+  <h3>3.2 Tabla 3: clasificación en 7 categorías</h3>
+
+  <p>
+    Reproducción de la Tabla 3 del paper. Las categorías 1-4 son <em>Normal Fires</em>;
+    5-7 son <em>Extreme Wildfire Events</em>. La línea punteada marca el umbral de
+    capacidad operativa de control.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Cat</th>
+        <th>FLI (kW/m)</th>
+        <th>ROS (m/min)</th>
+        <th>FL (m)</th>
+        <th>PyroCb</th>
+        <th>Downdrafts</th>
+        <th>Spotting Act.</th>
+        <th>Spotting Dist. (m)</th>
+        <th>Tipo / Control</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="tedim-cat-1">1</td>
+        <td class="num">&lt;500</td>
+        <td class="num">&lt;5–15</td>
+        <td class="num">&lt;1.5</td>
+        <td>Ausente</td>
+        <td>Ausente</td>
+        <td>Ausente</td>
+        <td class="num">0</td>
+        <td>Surface fire — fácil</td>
+      </tr>
+      <tr>
+        <td class="tedim-cat-2">2</td>
+        <td class="num">500–2.000</td>
+        <td class="num">&lt;15–30</td>
+        <td class="num">&lt;2.5</td>
+        <td>Ausente</td>
+        <td>Ausente</td>
+        <td>Bajo</td>
+        <td class="num">&lt;100</td>
+        <td>Surface fire — moderadamente difícil</td>
+      </tr>
+      <tr>
+        <td class="tedim-cat-3">3</td>
+        <td class="num">2.000–4.000</td>
+        <td class="num">&lt;20–50</td>
+        <td class="num">2.5–3.5</td>
+        <td>Ausente</td>
+        <td>Ausente</td>
+        <td>Alto</td>
+        <td class="num">≥100</td>
+        <td>Surface fire, torching posible — muy difícil</td>
+      </tr>
+      <tr>
+        <td class="tedim-cat-4">4</td>
+        <td class="num">4.000–10.000</td>
+        <td class="num">&lt;50–100</td>
+        <td class="num">3.5–10</td>
+        <td>Improbable</td>
+        <td>Localizado</td>
+        <td>Prolífico</td>
+        <td class="num">500–1.000</td>
+        <td>Crown fire posible — extremadamente difícil</td>
+      </tr>
+      <tr class="tedim-divider">
+        <td colspan="9">▼ Umbral de capacidad de control: a partir de aquí Extreme Wildfire Events (EWE) ▼</td>
+      </tr>
+      <tr>
+        <td class="tedim-cat-5">5</td>
+        <td class="num">10.000–30.000</td>
+        <td class="num">&lt;150–250</td>
+        <td class="num">10–50</td>
+        <td>Posible</td>
+        <td>Presente</td>
+        <td>Prolífico</td>
+        <td class="num">&gt;1.000</td>
+        <td>Crown fire — virtualmente imposible</td>
+      </tr>
+      <tr>
+        <td class="tedim-cat-6">6</td>
+        <td class="num">30.000–100.000</td>
+        <td class="num">&lt;300</td>
+        <td class="num">50–100</td>
+        <td>Probable</td>
+        <td>Presente</td>
+        <td>Masivo</td>
+        <td class="num">&gt;2.000</td>
+        <td>Plume-driven — imposible</td>
+      </tr>
+      <tr>
+        <td class="tedim-cat-7">7</td>
+        <td class="num">&gt;100.000</td>
+        <td class="num">&gt;300</td>
+        <td class="num">&gt;100</td>
+        <td>Presente</td>
+        <td>Presente</td>
+        <td>Masivo</td>
+        <td class="num">&gt;5.000</td>
+        <td>Firestorm — imposible</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>3.3 Por qué el paper rechaza hectáreas como criterio</h3>
+  <p>En la Sección 3.1 (página 7) el paper es explícito:</p>
+  <blockquote>
+    «We do not propose wildfire size as a criterion to define EWE for several reasons:
+    (i) it is place-dependent, reflecting landscape characteristics, so it is not possible
+    to establish a commonly accepted and absolute threshold; (ii) size and severity do not
+    have a direct correlation; (iii) size tells us little about losses and damages; (iv)
+    size can also be the result of wildland fire use.»
+    <cite>Tedim et al. 2018, p. 7</cite>
+  </blockquote>
+
+  <p>
+    El argumento es contundente: un fuego de 10.000 ha en pastizal patagónico tras varios
+    días de propagación lenta NO es un EWE; un fuego de 2.000 ha cat 6 con PyroCb sí lo es.
+    El tamaño es un <em>resultado correlacionado</em> con el comportamiento, pero no es el
+    criterio definitorio.
+  </p>
+
+  <h3>3.4 Las tres vías para estimar FLI mencionadas en el paper</h3>
+  <p>En la Sección 3.3 (p. 8) el paper enumera tres rutas para estimar FLI:</p>
+  <ol>
+    <li><strong>Directo (Byram 1959)</strong>: medir o estimar ROS y consumo de combustible,
+        aplicar <code>FLI = H · w · R</code>. Requiere modelo de comportamiento (Rothermel,
+        BehavePlus, FlamMap) más datos in situ.</li>
+    <li><strong>Desde Flame Length (Alexander 1982)</strong>: <code>FLI ≈ 259.833 · FL<sup>2.174</sup></code>.
+        Operacionalmente conveniente porque la FL se estima visualmente en terreno.</li>
+    <li><strong>Desde FRP (Wooster et al. 2003)</strong>: convertir potencia radiativa MODIS
+        a intensidad lineal del frente. Cita textual:
+        <em>«FLI estimates from FRP can be obtained for ongoing monitored wildfires by remote
+        sensing imagery»</em>.</li>
+  </ol>
+
+  <p>
+    Para datos históricos (post-evento) sin instrumentación in situ, la <strong>vía FRP es la
+    única operacionalmente viable</strong> a escala de dataset completo.
+  </p>
+</section>
+
+<!-- =================== SECCIÓN 4 =================== -->
+<section id="problema">
+  <h2>4. El problema del label en CONAF <a class="heading-anchor" href="#problema">#</a></h2>
+
+  <h3>4.1 Caracterización del dataset CONAF (subset 2016-2017)</h3>
+  <p>
+    El archivo procesado <code>data/processed/conaf_enriched_latest.parquet</code> contiene
+    <strong>12.381 eventos</strong> de incendios forestales en Chile durante las temporadas
+    <strong>2016-2017</strong> (7.475 en 2016 + 4.906 en 2017), georreferenciados y con
+    <strong>66 columnas</strong>: <strong>27</strong> originales CONAF (las 28 del ETL
+    menos <code>geometry</code>, redundante con <code>latitud</code>/<code>longitud</code>)
+    + <strong>36</strong> variables ERA5-Land (17 crudas, 11 derivadas, 8 invariantes
+    estáticas del grid) + <strong>3</strong> metadatos del matching espacio-temporal
+    (<code>era5_dist_km</code>, <code>era5_dt_hours</code>, <code>era5_match_quality</code>).
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Estadístico</th>
+        <th>superficie_quemada_total_ha</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>N total</td><td class="num">12.381</td></tr>
+      <tr><td>N con superficie &gt; 0</td><td class="num">12.376</td></tr>
+      <tr><td>Mediana</td><td class="num">0.45</td></tr>
+      <tr><td>P75</td><td class="num">2.0</td></tr>
+      <tr><td>P90</td><td class="num">8.6</td></tr>
+      <tr><td>P95</td><td class="num">26.2</td></tr>
+      <tr><td>P98</td><td class="num">105.0</td></tr>
+      <tr><td>P99</td><td class="num">340.0</td></tr>
+      <tr><td>Máximo</td><td class="num">159.813</td></tr>
+      <tr><td>Suma total</td><td class="num">616.144 ha</td></tr>
+    </tbody>
+  </table>
+
+  <p>
+    La distribución es marcadamente <strong>power-law</strong>: la mayoría de eventos son
+    pequeños (mediana 0.45 ha), pero una cola larga incluye fuegos catastróficos como
+    <strong>Las Máquinas</strong> (enero 2017, Maule) que aporta el máximo de ~160.000 ha.
+    El subset 2016-2017 acumula 616.144 ha quemadas — una concentración inusualmente alta
+    producto de la temporada del <em>«incendio del siglo»</em>. Esto sesga al alza los
+    percentiles regionales de Maule, O'Higgins y Metropolitana respecto a un año típico.
+  </p>
+
+  <h3>4.2 Por qué no se puede aplicar Tedim directo</h3>
+  <p>El paper Tedim define EWE por FLI, ROS, FL y spotting. Para aplicar el estándar tal cual necesitaríamos:</p>
+  <ul>
+    <li>Medición instantánea de FLI durante el incendio → <strong>no existe</strong> en CONAF.</li>
+    <li>Mediciones de FL en terreno → no registradas.</li>
+    <li>Logs de comportamiento de la columna convectiva (PyroCb) → no registrados.</li>
+  </ul>
+
+  <p>
+    CONAF solo registra <em>outcomes</em> (superficie final, duración, alerta, escenario) —
+    todos <strong>ex-post</strong>. Para aplicar Tedim necesitamos <em>inferir</em> el
+    comportamiento del fuego desde proxies, y la única vía operacionalmente viable a escala
+    completa es FRP desde MODIS.
+  </p>
+
+  <h3>4.3 Análisis estadístico realizado</h3>
+  <p>
+    El script <code>scripts/megafire_thresholds.py</code> aplica cuatro métodos para
+    proponer umbrales de severidad:
+  </p>
+  <ol>
+    <li><strong>Percentil</strong>: P95, P98, P99 sobre eventos con superficie &gt; 0.</li>
+    <li><strong>Log-normal</strong>: ajuste Normal sobre log(ha), umbral en exp(μ + k·σ).</li>
+    <li><strong>Pareto-80%</strong>: superficie mínima donde el 20% superior acumula 80% del área.</li>
+    <li><strong>Benchmark</strong>: ¿en qué percentil caen 200, 500 y 1.000 ha (umbrales
+        literatura internacional)?</li>
+  </ol>
+
+  <p>El reporte completo está en <code>data/processed/megafire_thresholds.md</code>.</p>
+
+  <div class="callout callout-warning">
+    <span class="callout-title">Caveat sobre el reporte de umbrales</span>
+    El script <code>scripts/megafire_thresholds.py</code> se ejecutó sobre el dataset CONAF
+    2002-2020 original (ahora en <code>data/archive/conaf_clean.parquet</code>). Los números
+    citados de aquí en adelante corresponden al <strong>recálculo manual sobre el subset
+    2016-2017</strong> (<code>conaf_enriched_latest.parquet</code>). Re-apuntar el script al
+    nuevo dataset queda como follow-up: implica regenerar el markdown y refrescar las
+    cifras de log-normal y Pareto-80% sobre la ventana acotada.
+  </div>
+
+  <h3>4.4 P99 regional — resultados</h3>
+  <p>
+    De los cuatro métodos, se adopta <strong>P99 regional</strong> como base del label L1b.
+    Justificación en la <a href="#estrategia">Sección 5</a>. Tabla con los umbrales por región:
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Región</th>
+        <th>N total</th>
+        <th>P99 (ha)</th>
+        <th>Nota</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>GLOBAL</strong></td><td class="num">12.381</td><td class="num">340.0</td><td>Referencia general</td></tr>
+      <tr><td>Biobío</td><td class="num">4.555</td><td class="num">124.8</td><td>—</td></tr>
+      <tr><td>Araucanía</td><td class="num">2.220</td><td class="num">114.2</td><td>—</td></tr>
+      <tr><td>Valparaíso</td><td class="num">1.857</td><td class="num">298.9</td><td>—</td></tr>
+      <tr><td>Maule</td><td class="num">1.411</td><td class="num">640.2</td><td>Incluye Las Máquinas (2017)</td></tr>
+      <tr><td>Metropolitana</td><td class="num">776</td><td class="num">1.419.1</td><td>Sesgo por 2017</td></tr>
+      <tr><td>O'Higgins</td><td class="num">478</td><td class="num">4.009.6</td><td>Temporada catastrófica 2017</td></tr>
+      <tr><td>Los Lagos</td><td class="num">449</td><td class="num">56.2</td><td>—</td></tr>
+      <tr><td>Los Ríos</td><td class="num">258</td><td class="num">61.5</td><td>—</td></tr>
+      <tr><td>Coquimbo</td><td class="num">218</td><td class="num">80.2</td><td>—</td></tr>
+      <tr><td>Aysén</td><td class="num">58</td><td class="num">1.545.7</td><td>Régimen patagónico</td></tr>
+      <tr><td>Magallanes</td><td class="num">52</td><td class="num">55.9</td><td>—</td></tr>
+      <tr style="background:#fef2f2;"><td>Atacama</td><td class="num">44</td><td class="num">23.2</td><td><strong>Excluida</strong> (n &lt; 50)</td></tr>
+      <tr style="background:#fef2f2;"><td>Arica y Parinacota</td><td class="num">5</td><td class="num">1.9</td><td><strong>Excluida</strong> (n &lt; 50)</td></tr>
+    </tbody>
+  </table>
+
+  <p class="small" style="margin-top:0.5rem;">
+    <strong>Regiones no presentes en este subset:</strong> Antofagasta, Tarapacá y Ñuble no
+    aparecen porque no tienen cobertura ERA5 dentro del bounding box trabajado o no tuvieron
+    eventos CONAF georreferenciables en 2016-2017. En el dataset CONAF completo (archivado)
+    sí tenían datos, aunque con muestras pequeñas: Antofagasta n=11, Arica n=26, Tarapacá n=10.
+  </p>
+
+  <div class="callout callout-warning">
+    <span class="callout-title">Observación</span>
+    P99 varía 72x entre regiones: Magallanes 55.9 ha vs O'Higgins 4.009 ha. La heterogeneidad
+    refleja dos fuentes superpuestas — (a) régimen ecológico (patagónico vs mediterráneo
+    vs nórdico), y (b) el efecto del megaincendio de 2017 sobre las cifras de Maule,
+    O'Higgins y Metropolitana, que en un dataset multi-anual estarían más diluidas.
+    Un umbral global único oculta esta heterogeneidad.
+  </div>
+</section>
+
+<!-- =================== SECCIÓN 5 =================== -->
+<section id="estrategia">
+  <h2>5. Estrategia de etiquetado adoptada <a class="heading-anchor" href="#estrategia">#</a></h2>
+
+  <p>
+    El proyecto adopta <strong>dos labels con roles diferenciados</strong>:
+    <strong>L2</strong> (FLI ≥ 10.000 kW/m vía MODIS-FRP) como <em>target objetivo</em>
+    alineado con el estándar Tedim et al. 2018, y <strong>L1b</strong> (P99 regional de
+    hectáreas) como <em>proxy preliminar</em> que bootstrappea el pipeline de modelado mientras
+    L2 no está implementado y que sirve como análisis de sensibilidad en el paper. Se entrenan
+    dos modelos XGBoost independientes (uno por label) para comparar sus SHAPs e identificar
+    drivers robustos versus específicos del label.
+  </p>
+
+  <h3>5.1 Label L2 — FLI desde MODIS-FRP (target objetivo, alineado con Tedim 2018)</h3>
+  <p>
+    <strong>Definición</strong>: <code>label_l2 = 1</code> si <code>FLI_estimado ≥ 10.000 kW/m</code>,
+    sino <code>0</code>. FLI se estima desde FRP MODIS (ver pipeline detallado en
+    <a href="#pipeline">Sección 6</a>).
+  </p>
+
+  <div class="callout callout-justification">
+    <span class="callout-title">Por qué L2 es el target objetivo del proyecto</span>
+    <ul>
+      <li><strong>Alineamiento con estándar internacional</strong>: Tedim et al. 2018 es la
+          referencia metodológica consolidada para definir <em>Extreme Wildfire Events</em>
+          (cat 5+). El paper final puede comparar drivers de EWE en Chile con los reportados
+          en Australia, China o Mediterráneo europeo.</li>
+      <li><strong>Captura comportamiento físico</strong>: FLI integra contenido calórico, masa
+          de combustible y velocidad de propagación. Predecir FLI es predecir el comportamiento
+          peligroso, no solo el outcome de superficie.</li>
+      <li><strong>Inmune al sesgo de 2016-17</strong>: si Las Máquinas tuvo FLI ~60k kW/m,
+          será label=1 sin importar que distorsione los P99 regionales del proxy L1b.</li>
+      <li><strong>El paper reporta sobre L2</strong>: SHAP analysis sobre L2 es el resultado
+          central; L1b aparece como sensitivity check.</li>
+    </ul>
+    <strong>Limitación</strong>: MODIS detecta consistentemente fuegos &gt;50 ha. Para fuegos
+    más pequeños, <code>label_l2 = 0</code> por defecto (correcto: si no fue visible al
+    satélite, no era catastrófico).
+  </div>
+
+  <p>
+    <strong>Estado actual</strong>: L2 <em>no está implementado</em>. Requiere autenticación
+    Google Earth Engine + query MODIS MOD14A1/MYD14A1 + conversión FRP→FLI (Wooster 2003).
+    Es prioridad alta del roadmap.
+  </p>
+
+  <h3>5.2 Label L1b — Hectáreas P99 regional (proxy preliminar + sensitivity analysis)</h3>
+  <p><strong>Definición</strong>: <code>label_l1b = 1</code> si
+  <code>superficie_quemada_total_ha ≥ P99_region</code>, sino <code>0</code>.</p>
+
+  <p>
+    L1b cumple <strong>dos roles</strong>: (a) bootstrappea el pipeline de modelado XGBoost+SHAP
+    end-to-end mientras se construye L2 (cuando L2 esté listo, solo cambia el target); (b) sirve
+    como análisis de sensibilidad metodológico en el paper — <em>¿qué cambia si el target es un
+    proxy estadístico de superficie en lugar del criterio físico de EWE?</em>
+  </p>
+
+  <div class="callout callout-justification">
+    <span class="callout-title">Justificación P99 regional (threshold del proxy)</span>
+    <p><strong>Por qué P99 y no P95 o P98:</strong></p>
+    <ul>
+      <li>P95 en Biobío = 10.2 ha — eso NO es un megaincendio en ningún sentido operacional.
+          P95 captura «fuego no-trivial», no «catastrófico».</li>
+      <li>P98 a nivel regional produce ~254 positivos (~2%) y P99 produce <strong>129
+          positivos (~1.05%)</strong> en el subset 2016-2017. Ambos preservan la rareza del
+          fenómeno, pero P99 es más restrictivo.</li>
+      <li>P99 produce ~1% de imbalance — manejable con <code>scale_pos_weight</code> en XGBoost.</li>
+      <li>Preserva el significado semántico de «mega» = top 1% de severidad por región.</li>
+    </ul>
+    <p><strong>Por qué regional y no global:</strong></p>
+    <ul>
+      <li>P99 global del subset = 340 ha. Para Biobío (régimen mediterráneo de fuegos
+          pequeños y frecuentes) este umbral casi nunca se alcanza; para Aysén (patagónico,
+          fuegos lentos pero grandes, P99 = 1.546 ha) es demasiado bajo y haría que casi
+          todos los fuegos patagónicos calificaran como mega.</li>
+      <li>Un umbral regional respeta el régimen de fuego de cada bioma chileno.</li>
+      <li>El modelo aprenderá «¿qué hace que un fuego sea grande <em>para su región</em>?»,
+          más informativo que «¿es grande comparado con todo Chile?».</li>
+    </ul>
+  </div>
+
+  <div class="callout callout-warning">
+    <span class="callout-title">Limitaciones de L1b como proxy de EWE</span>
+    Superficie quemada y FLI están correlacionadas pero no son equivalentes. Un fuego de 200 ha
+    en bosque seco con viento extremo (alto FLI) y un fuego de 200 ha en pastizal con propagación
+    lenta (bajo FLI) reciben el mismo label L1b, pero solo el primero es EWE según Tedim. Por
+    eso L1b funciona como bootstrap operacional y sensitivity analysis, no como sustituto de L2.
+  </div>
+
+  <h3>5.3 Exclusión de regiones de baja muestra</h3>
+  <p>
+    Se excluyen del entrenamiento las regiones con &lt; 50 eventos en el subset 2016-2017:
+    <strong>Atacama</strong> (n=44) y <strong>Arica y Parinacota</strong> (n=5). Total:
+    <strong>49 eventos descartados</strong> (0.40% del subset acotado), quedando 12.332
+    filas en 11 regiones.
+  </p>
+
+  <p>
+    Adicionalmente, tres regiones del CONAF original (<strong>Antofagasta</strong>,
+    <strong>Tarapacá</strong>, <strong>Ñuble</strong>) <em>no aparecen</em> en este subset:
+    no tienen cobertura ERA5 dentro del bounding box trabajado o no tuvieron eventos
+    enriquecibles durante 2016-2017. No requieren acción explícita.
+  </p>
+
+  <div class="callout callout-justification">
+    <span class="callout-title">Justificación</span>
+    <ul>
+      <li>P99 con n &lt; 50 es estadísticamente inestable (intervalo de confianza enorme).</li>
+      <li>El modelo aprendería ruido específico de esas regiones, no señal generalizable.</li>
+      <li>Son regiones del norte árido donde los incendios forestales no son representativos
+          del problema operacional chileno (la mayoría son quemas agrícolas pequeñas).</li>
+    </ul>
+  </div>
+
+  <h3>5.4 Por qué L2 como target y L1b como proxy + sensitivity</h3>
+  <p>
+    La relación entre ambos labels <strong>no es simétrica</strong>: L2 es el objetivo
+    científico del proyecto, L1b es un instrumento que sirve dos propósitos auxiliares.
+  </p>
+
+  <p><strong>Rol de L2 (target objetivo)</strong>:</p>
+  <ul>
+    <li>Es lo que el paper reporta como resultado central.</li>
+    <li>Permite comparar drivers de EWE en Chile con literatura internacional (Australia, China,
+        Mediterráneo) que usa el mismo criterio Tedim 2018.</li>
+    <li>Captura comportamiento físico del fuego, no solo el outcome de superficie.</li>
+  </ul>
+
+  <p><strong>Rol de L1b (proxy preliminar + sensitivity)</strong>:</p>
+  <ol>
+    <li><strong>Bootstrap del pipeline</strong>: permite implementar y validar el flujo
+        XGBoost+SHAP end-to-end mientras se construye el pipeline MODIS-FRP (autenticación GEE,
+        query MOD14, conversión FRP→FLI). Cuando L2 esté listo, solo cambia el target.</li>
+    <li><strong>Sensitivity analysis en el paper</strong>: comparar SHAPs L1b vs L2 cuantifica
+        cuánto del resultado depende de la definición del target. Drivers consistentes entre
+        ambos son robustos; drivers que solo aparecen en uno revelan artefactos del label.</li>
+    <li><strong>Matriz de confusión L1b vs L2</strong>: identifica eventos discrepantes
+        (fuegos pequeños con FLI alto = pastizal extremo seco; fuegos grandes con FLI bajo =
+        quemas que se descontrolaron lento). Insumo cualitativo para discusión del paper.</li>
+  </ol>
+</section>
+
+<!-- =================== SECCIÓN 6 =================== -->
+<section id="pipeline">
+  <h2>6. Pipeline a prueba de tontos <a class="heading-anchor" href="#pipeline">#</a></h2>
+
+  <p>
+    Procedimiento paso a paso para transformar el parquet crudo CONAF en un dataset con dos
+    labels binarios listo para XGBoost. Cada paso describe: entrada, proceso, salida, y
+    código ilustrativo en Python.
+  </p>
+
+  <h3>6.1 Diagrama de flujo general</h3>
+
+  <pre class="flow-diagram">
+INPUT: data/processed/conaf_enriched_latest.parquet
+       12.381 eventos · 66 columnas (27 CONAF + 36 ERA5 + 3 matching)
+       Período: 2016-2017 · 13 regiones presentes
+    │
+    ▼
+┌────────────────────────────────────────────────────────────────┐
+│ [1] Filtrar regiones de baja muestra (n_eventos < 50)          │
+│     Excluir: Atacama (n=44), Arica y Parinacota (n=5)          │
+│     → 12.332 eventos en 11 regiones                            │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ├═══════════════════════════════════╗  ←── PATH PRINCIPAL (target objetivo)
+    ▼                                   ▼
+┌──────────────────────┐    ╔═════════════════════════════════════╗
+│ [2a] Threshold       │    ║ [2b] L2: pipeline MODIS-FRP         ║
+│      P99 regional    │    ║      (Tedim 2018, FLI ≥ 10 kW/m)    ║
+│   (solo para L1b)    │    ║                                     ║
+│                      │    ║  [2b.1] Filtrar candidatos > 50 ha  ║
+│  Para cada región:   │    ║         (~396 en subset)            ║
+│  P99 de              │    ║  [2b.2] Query MODIS vía Earth Engine║
+│  superficie_quemada  │    ║  [2b.3] FRP → FLI (Wooster 2003)    ║
+│  → {region: p99_ha}  │    ║  [2b.4] label_l2 = 1 si FLI ≥ 10k   ║
+└──────────────────────┘    ║         ~30–80 positivos (estimado) ║
+    │                       ╚═════════════════════════════════════╝
+    ▼                                   │
+┌──────────────────────┐                │
+│ [3] L1b (proxy):     │                │
+│   label_l1b = 1 si   │                │
+│   area ≥ P99_region  │                │
+│   ~129 positivos     │                │
+│   (≈1%)              │                │
+└──────────────────────┘                │
+    │                                   │
+    └───────────────┬───────────────────┘
+                    ▼
+┌────────────────────────────────────────────────────────────────┐
+│ [4] Cross-check L1b vs L2 (matriz de confusión)                │
+│     Insumo para sensitivity analysis del paper                 │
+└────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+OUTPUT: data/processed/conaf_labeled.parquet
+        Columnas originales + label_l1b (proxy) + label_l2 (target)
+        Listo para feature engineering (Sección 7)
+
+LEYENDA:
+  ║ ═  Path principal — L2 (target objetivo, paper reporta sobre este)
+  │ ─  Path secundario — L1b (proxy preliminar + sensitivity analysis)
+  </pre>
+
+  <h3>6.2 Paso 1 — Filtrar regiones de baja muestra</h3>
+  <p>
+    <strong>Entrada</strong>: <code>conaf_enriched_latest.parquet</code> (12.381 filas,
+    13 regiones presentes).<br>
+    <strong>Proceso</strong>: descartar filas cuya <code>region</code> esté en
+    <code>{Atacama, Arica y Parinacota}</code>.<br>
+    <strong>Salida</strong>: DataFrame con 12.332 filas, 11 regiones.
+  </p>
+
+  <pre><code>import pandas as pd
+
+REGIONES_EXCLUIDAS = {"Atacama", "Arica y Parinacota"}
+
+df = pd.read_parquet("data/processed/conaf_enriched_latest.parquet")
+df = df[~df["region"].isin(REGIONES_EXCLUIDAS)].reset_index(drop=True)
+print(f"Eventos retenidos: {len(df):,}")  # Esperado: 12.332
+</code></pre>
+
+  <h3>6.3 Paso 2 — Calcular threshold P99 regional</h3>
+  <p>
+    <strong>Entrada</strong>: DataFrame filtrado.<br>
+    <strong>Proceso</strong>: para cada región, computar P99 sobre eventos con
+    <code>superficie_quemada_total_ha &gt; 0</code> (excluye reportes sin superficie informada).<br>
+    <strong>Salida</strong>: <code>dict {region: p99_ha}</code>.
+  </p>
+
+  <pre><code>import numpy as np
+
+def p99_por_region(df: pd.DataFrame) -> dict:
+    """Calcula P99 de superficie quemada por región (solo eventos positivos)."""
+    thresholds = {}
+    for region, grupo in df.groupby("region"):
+        positivos = grupo.loc[grupo["superficie_quemada_total_ha"] &gt; 0,
+                              "superficie_quemada_total_ha"]
+        thresholds[region] = float(np.percentile(positivos, 99))
+    return thresholds
+
+p99_dict = p99_por_region(df)
+# {'Biobío': 124.8, 'Araucanía': 114.2, 'Maule': 640.2,
+#  'Metropolitana': 1419.1, "O'Higgins": 4009.6, 'Aysén': 1545.7, ...}
+</code></pre>
+
+  <h3>6.4 Paso 3 — Label L1b (hectáreas)</h3>
+  <p>
+    <strong>Proceso</strong>: para cada fila, comparar <code>superficie_quemada_total_ha</code>
+    con el threshold de su región. <strong>Crítico</strong>: eventos con superficie 0 o NaN
+    se etiquetan como 0 (no son megaincendios por construcción).
+  </p>
+
+  <pre><code>def aplicar_l1b(df: pd.DataFrame, thresholds: dict) -> pd.Series:
+    """Genera label binario L1b basado en threshold P99 regional."""
+    threshold_por_fila = df["region"].map(thresholds)
+    return (df["superficie_quemada_total_ha"] &gt;= threshold_por_fila).astype(int)
+
+df["label_l1b"] = aplicar_l1b(df, p99_dict)
+print(f"Positivos L1b: {df['label_l1b'].sum():,} ({df['label_l1b'].mean()*100:.2f}%)")
+# Esperado: ~129 positivos (~1.05%)
+</code></pre>
+
+  <h3>6.5 Paso 4 — Label L2 (MODIS-FRP → FLI)</h3>
+  <p>
+    Pipeline más complejo. Se ejecuta solo sobre fuegos candidatos
+    (<code>superficie_quemada_total_ha &gt; 50</code>) para optimizar consultas a Earth Engine,
+    ya que MODIS no detecta fuegos más pequeños.
+  </p>
+
+  <h4>4.1 Filtrar candidatos</h4>
+  <pre><code>candidatos = df[df["superficie_quemada_total_ha"] &gt; 50].copy()
+print(f"Candidatos MODIS: {len(candidatos):,}")  # ~396 en subset 2016-2017
+</code></pre>
+
+  <h4>4.2 Query MODIS vía Google Earth Engine</h4>
+  <p>
+    Para cada candidato, consultar la colección <code>MODIS/061/MOD14A1</code> +
+    <code>MYD14A1</code> en una ventana espacial (5 km de radio alrededor de
+    <code>lat/lon</code>) y temporal (<code>fecha_hora_inicio</code> a
+    <code>fecha_hora_inicio + duracion</code> o + 7 días si duración es inválida).
+  </p>
+
+  <pre><code>import ee
+ee.Initialize()
+
+def query_frp_modis(lat: float, lon: float,
+                    start: str, end: str,
+                    buffer_km: float = 5.0) -> float | None:
+    """Devuelve el FRP máximo (MW) detectado en la ventana espacio-temporal."""
+    point = ee.Geometry.Point([lon, lat])
+    region = point.buffer(buffer_km * 1000)
+    col = (ee.ImageCollection("MODIS/061/MOD14A1")
+             .merge(ee.ImageCollection("MODIS/061/MYD14A1"))
+             .filterBounds(region)
+             .filterDate(start, end)
+             .select("FirePower"))
+    if col.size().getInfo() == 0:
+        return None
+    max_frp_img = col.max()
+    val = max_frp_img.reduceRegion(
+        reducer=ee.Reducer.max(),
+        geometry=region,
+        scale=1000
+    ).get("FirePower").getInfo()
+    return val  # en MW
+</code></pre>
+
+  <h4>4.3 Convertir FRP → FLI (Wooster et al. 2003)</h4>
+  <p>
+    La relación FRP→FLI no es directa; depende del largo del frente de fuego.
+    Aproximación operacional:
+  </p>
+  <pre><code>def frp_to_fli(frp_mw: float, fire_front_length_m: float,
+               radiant_fraction: float = 0.17) -> float:
+    """
+    Convierte FRP (MW) a FLI (kW/m) usando relación de Wooster (2003).
+
+    radiant_fraction: fracción de la potencia total emitida como radiación
+                      (típicamente 0.13–0.20 según vegetación).
+    fire_front_length_m: longitud del frente de fuego activo.
+                         Estimación gruesa: sqrt(area_quemada_m2) si no se conoce.
+    """
+    # Potencia total = FRP / radiant_fraction
+    total_power_kw = (frp_mw * 1000) / radiant_fraction
+    # FLI = potencia por unidad de longitud de frente
+    fli_kw_m = total_power_kw / fire_front_length_m
+    return fli_kw_m
+</code></pre>
+
+  <div class="callout callout-warning">
+    <span class="callout-title">Caveat</span>
+    La estimación del largo del frente desde la superficie final es gruesa. Para una
+    primera versión <code>fire_front_length_m = sqrt(area_ha * 10000) / 4</code>
+    (asume forma aproximadamente cuadrada con frente activo en un lado).
+    Refinamientos posteriores pueden usar el shapefile del perímetro de incendio si está disponible.
+  </div>
+
+  <h4>4.4 Aplicar threshold y asignar label</h4>
+  <pre><code>THRESHOLD_FLI = 10_000  # kW/m, definición Tedim cat 5
+
+candidatos["frp_max_mw"] = candidatos.apply(
+    lambda r: query_frp_modis(r["latitud"], r["longitud"],
+                              r["fecha_hora_inicio_utc"],
+                              r["fecha_hora_inicio_utc"] + pd.Timedelta(days=7)),
+    axis=1
+)
+candidatos["fire_front_m"] = (candidatos["superficie_quemada_total_ha"] * 10_000) ** 0.5 / 4
+candidatos["fli_kw_m"] = candidatos.apply(
+    lambda r: frp_to_fli(r["frp_max_mw"], r["fire_front_m"]) if pd.notna(r["frp_max_mw"]) else None,
+    axis=1
+)
+
+# Asignar label_l2 al dataset completo
+df["label_l2"] = 0
+positivos_l2 = candidatos[candidatos["fli_kw_m"] &gt;= THRESHOLD_FLI].index
+df.loc[positivos_l2, "label_l2"] = 1
+</code></pre>
+
+  <h3>6.6 Paso 5 — Cross-check L1b vs L2</h3>
+
+  <pre><code>from sklearn.metrics import confusion_matrix
+
+cm = confusion_matrix(df["label_l1b"], df["label_l2"])
+print("Matriz de confusión L1b (filas) vs L2 (columnas):")
+print(cm)
+
+# Eventos donde difieren — para revisión manual
+discrepancias = df[df["label_l1b"] != df["label_l2"]].copy()
+discrepancias["tipo"] = discrepancias.apply(
+    lambda r: "L1b=1, L2=0 (grande pero no extremo)"
+              if r["label_l1b"] == 1 else "L1b=0, L2=1 (chico pero extremo)",
+    axis=1
+)
+discrepancias.to_csv("data/processed/label_discrepancies.csv", index=False)
+</code></pre>
+
+  <div class="callout callout-info">
+    <span class="callout-title">Interpretación de discrepancias</span>
+    <ul>
+      <li><strong>L1b=1, L2=0</strong>: fuego grande en hectáreas pero sin firma extrema en
+          MODIS. Probablemente fuego lento que cubrió mucha superficie sin alta intensidad
+          (pastizal patagónico, plantación joven).</li>
+      <li><strong>L1b=0, L2=1</strong>: fuego pequeño en hectáreas pero con FLI alto. Puede
+          ser un fuego intenso detenido a tiempo, o un falso positivo del MODIS-FRP.</li>
+    </ul>
+  </div>
+
+  <h3>6.7 Output final</h3>
+  <pre><code>df.to_parquet("data/processed/conaf_labeled.parquet")
+print(f"L1b positivos: {df['label_l1b'].sum():,}")
+print(f"L2 positivos:  {df['label_l2'].sum():,}")
+print(f"Ambos = 1:     {((df['label_l1b']==1) & (df['label_l2']==1)).sum():,}")
+print(f"Solo L1b = 1:  {((df['label_l1b']==1) & (df['label_l2']==0)).sum():,}")
+print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
+</code></pre>
+</section>
+
+<!-- =================== SECCIÓN 7 =================== -->
+<section id="features">
+  <h2>7. Features para XGBoost (sin leakage) <a class="heading-anchor" href="#features">#</a></h2>
+
+  <p>
+    El modelo predice en el momento de ignición, por lo que solo puede usar variables
+    medibles <strong>antes o exactamente al momento de inicio</strong> del fuego. Toda
+    información generada por el fuego mismo introduce <em>data leakage</em> y debe excluirse.
+  </p>
+
+  <div class="two-col">
+    <div class="two-col-card allowed">
+      <h4>✓ Permitidas (no leakage)</h4>
+      <p><strong>ERA5-Land al momento de ignición:</strong></p>
+      <ul>
+        <li><code>t2m_celsius</code> — temperatura a 2 m</li>
+        <li><code>d2m_celsius</code> — punto de rocío a 2 m</li>
+        <li><code>relative_humidity</code> — humedad relativa</li>
+        <li><code>vpd_hpa</code> — déficit presión vapor</li>
+        <li><code>wind_speed</code> — velocidad viento 10 m</li>
+        <li><code>wind_direction</code> — dirección viento</li>
+        <li><code>swvl1</code>, <code>swvl2</code>, <code>swvl3</code>, <code>swvl4</code> —
+            humedad suelo 4 capas</li>
+        <li><code>tp_mm</code> — precipitación acumulada</li>
+        <li><code>pev</code>, <code>e</code>, <code>evavt</code> — evaporación</li>
+        <li><code>ssrd</code> — radiación solar superficie</li>
+        <li><code>stl1..4_celsius</code> — temperatura suelo 4 capas</li>
+      </ul>
+      <p><strong>Estáticas geográficas:</strong></p>
+      <ul>
+        <li><code>latitud</code>, <code>longitud</code></li>
+      </ul>
+      <p><strong>Estacionales (derivar de <code>fecha_hora_inicio</code>):</strong></p>
+      <ul>
+        <li><code>mes</code> (1–12)</li>
+        <li><code>hora</code> (0–23)</li>
+        <li><code>dia_semana</code> (0–6)</li>
+      </ul>
+      <p><strong>Vegetativas (estado del paisaje):</strong></p>
+      <ul>
+        <li><code>lai_hv</code>, <code>lai_lv</code> — Leaf Area Index alta/baja vegetación</li>
+        <li><code>cvh</code>, <code>cvl</code> — fracción cobertura alta/baja</li>
+        <li><code>tvh</code>, <code>tvl</code> — tipo alta/baja vegetación</li>
+      </ul>
+    </div>
+
+    <div class="two-col-card forbidden">
+      <h4>✗ Prohibidas (data leakage)</h4>
+      <p><strong>Outcomes del fuego:</strong></p>
+      <ul>
+        <li><code>duracion_minutos</code>
+            <div class="reason">Se conoce solo cuando termina el fuego.</div>
+        </li>
+        <li><code>superficie_quemada_total_ha</code>
+            <div class="reason">Es prácticamente el target — leakage total.</div>
+        </li>
+        <li><code>superficie_quemada_pino_*</code>, <code>_eucalipto_</code>,
+            <code>_matorral_</code>, etc.
+            <div class="reason">Mismo problema: outcome del fuego.</div>
+        </li>
+      </ul>
+      <p><strong>Etiquetas operacionales ex-post:</strong></p>
+      <ul>
+        <li><code>alerta</code>
+            <div class="reason">La declaración de alerta (amarilla/roja) se decide tras
+            evaluar el fuego, no antes.</div>
+        </li>
+        <li><code>escenario</code>
+            <div class="reason">CONAF codifica el escenario IFor-Vn/IFor-PI/etc. al cerrar
+            el reporte. Aunque conceptualmente describe el contexto, en la práctica es ex-post.</div>
+        </li>
+      </ul>
+      <p><strong>Metadata identificadora:</strong></p>
+      <ul>
+        <li><code>nombre</code>
+            <div class="reason">No es señal predictiva.</div>
+        </li>
+        <li><code>fecha_hora_inicio</code> directo
+            <div class="reason">Descomponer en mes/hora/día semana sí, pero no usar el
+            timestamp absoluto (introduce dependencia temporal espuria).</div>
+        </li>
+      </ul>
+      <p><strong>Metadatos de matching ERA5:</strong></p>
+      <ul>
+        <li><code>era5_dist_km</code>, <code>era5_dt_hours</code>, <code>era5_match_quality</code>
+            <div class="reason">Describen la calidad del cruce espacio-temporal CONAF↔ERA5.
+            Son útiles para diagnóstico y filtrado de matches malos, pero no son señales
+            físicas del fuego. No usar como features.</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>7.1 Class imbalance</h3>
+  <p>
+    Con label L1b a P99 regional sobre el subset 2016-2017: <strong>129 positivos
+    (~1.05%)</strong> sobre 12.332 filas filtradas. Con label L2 (MODIS): probablemente
+    menor (~0.2–0.6% según calidad del match). Esto es un imbalance severo y requiere
+    mitigación explícita.
+  </p>
+
+  <h4>Opciones de mitigación en XGBoost</h4>
+  <ul>
+    <li><strong><code>scale_pos_weight</code></strong>: factor multiplicador para el gradiente
+        de la clase positiva. Setting recomendado:
+        <code>scale_pos_weight = n_neg / n_pos</code> (≈99 para L1b).</li>
+    <li><strong>Focal loss</strong> (custom objective): pondera más los ejemplos difíciles.
+        Útil cuando los positivos son heterogéneos.</li>
+    <li><strong>Undersampling de negativos</strong>: muestrear aleatoriamente el 5-10% de
+        los negativos. Pierde información pero acelera entrenamiento.</li>
+    <li><strong>SMOTE / synthetic minorities</strong>: <em>no recomendado</em> aquí —
+        sintetizar megaincendios artificiales viola la naturaleza espacio-temporal del
+        problema.</li>
+  </ul>
+
+  <h4>Métricas de evaluación</h4>
+  <p>
+    <strong>No usar accuracy</strong> con este imbalance — un modelo que predice todo cero
+    obtiene 99% accuracy. Usar en su lugar:
+  </p>
+  <ul>
+    <li><strong>Precision-Recall AUC</strong>: más sensible al imbalance que ROC AUC.</li>
+    <li><strong>F1 macro</strong>: promedio balanceado entre clases.</li>
+    <li><strong>Recall a precisión fija</strong> (e.g., recall@precision=0.5): pregunta
+        operacional: «¿qué fracción de megaincendios reales detectamos si aceptamos 50% de
+        falsos positivos?»</li>
+  </ul>
+
+  <h3>7.2 Train/test split</h3>
+  <p>
+    <strong>No usar split aleatorio</strong> sobre el subset 2016-2017: los megaincendios
+    están concentrados en enero-febrero 2017. Un split aleatorio mezclaría observaciones
+    fuertemente correlacionadas temporal y espacialmente.
+  </p>
+  <ul>
+    <li><strong>Split temporal intra-subset</strong>: entrenar con temporada 2016 (7.475
+        eventos, incendios «normales»), validar con 2017 (4.906 eventos, incluye el evento
+        catastrófico). Pone a prueba la capacidad del modelo de predecir el régimen extremo
+        a partir del régimen normal — útil para XAI, riesgoso para evaluar performance
+        bruta dado el desbalance entre los dos años.</li>
+    <li><strong>Split espacial complementario</strong>: leave-one-region-out CV para evaluar
+        generalización a regiones no vistas.</li>
+    <li><strong>Roadmap</strong>: ampliar el enriched a 2002-2020 antes del entrenamiento
+        final. El protocolo objetivo será train 2002-2017, validate 2018-2020 (como en
+        diseños previos), una vez disponible la cobertura ERA5 completa.</li>
+  </ul>
+</section>
+
+<!-- =================== SECCIÓN 8 =================== -->
+<section id="referencias">
+  <h2>8. Referencias <a class="heading-anchor" href="#referencias">#</a></h2>
+
+  <ol class="references">
+    <li>
+      <span class="ref-num">[1]</span>
+      <strong>Tedim, F., Leone, V., Amraoui, M., et al. (2018)</strong>.
+      <em>Defining Extreme Wildfire Events: Difficulties, Challenges, and Impacts.</em>
+      <em>Fire</em>, 1(1), 9. MDPI.<br>
+      DOI: <a href="https://doi.org/10.3390/fire1010009">10.3390/fire1010009</a><br>
+      Texto completo: <a href="https://www.mdpi.com/2571-6255/1/1/9">mdpi.com</a> ·
+      <a href="https://research.fs.usda.gov/treesearch/57472">USDA mirror</a> ·
+      copia local: <code>references/Tedim2018_DefiningEWE.pdf</code>
+    </li>
+    <li>
+      <span class="ref-num">[2]</span>
+      <strong>Byram, G. M. (1959)</strong>.
+      <em>Combustion of Forest Fuels.</em>
+      In: Davis, K. P. (Ed.), <em>Forest Fire: Control and Use</em>. McGraw-Hill, New York,
+      pp. 61–89.<br>
+      <span class="small">Define formalmente la fireline intensity (FLI = H·w·R).</span>
+    </li>
+    <li>
+      <span class="ref-num">[3]</span>
+      <strong>Rothermel, R. C. (1972)</strong>.
+      <em>A Mathematical Model for Predicting Fire Spread in Wildland Fuels.</em>
+      USDA Forest Service Research Paper INT-115.<br>
+      <a href="https://www.fs.usda.gov/research/treesearch/32533">USDA Treesearch</a>
+    </li>
+    <li>
+      <span class="ref-num">[4]</span>
+      <strong>Alexander, M. E. (1982)</strong>.
+      <em>Calculating and Interpreting Forest Fire Intensities.</em>
+      <em>Canadian Journal of Botany</em>, 60(4), 349–357.<br>
+      <span class="small">Establece la relación FLI ≈ 259.833 · FL<sup>2.174</sup>.</span>
+    </li>
+    <li>
+      <span class="ref-num">[5]</span>
+      <strong>Alexander, M. E., &amp; Lanoville, R. A. (1989)</strong>.
+      <em>Predicting Fire Behavior in the Black Spruce-Lichen Woodland Fuel Type of Western
+      and Northern Canada.</em> Forestry Canada Northern Forestry Centre.<br>
+      <span class="small">Origen de la clasificación FLI categorías 1–4 que Tedim extiende a 7.</span>
+    </li>
+    <li>
+      <span class="ref-num">[6]</span>
+      <strong>Wooster, M. J., Zhukov, B., &amp; Oertel, D. (2003)</strong>.
+      <em>Fire radiative energy for quantitative study of biomass burning.</em>
+      <em>Remote Sensing of Environment</em>, 86(1), 83–107.<br>
+      DOI: <a href="https://doi.org/10.1016/S0034-4257(03)00070-1">10.1016/S0034-4257(03)00070-1</a><br>
+      <span class="small">Establece la relación FRP↔consumo de biomasa↔FLI.</span>
+    </li>
+    <li>
+      <span class="ref-num">[7]</span>
+      <strong>Lannom, K. B., Tinkham, W. T., Newingham, B. A., et al. (2014)</strong>.
+      <em>Defining extreme wildland fires using geospatial and ancillary metrics.</em>
+      <em>International Journal of Wildland Fire</em>, 23(3), 322–337.<br>
+      DOI: <a href="https://doi.org/10.1071/WF13065">10.1071/WF13065</a><br>
+      <span class="small">Propone umbrales basados en percentiles 90/95/99 de área quemada.</span>
+    </li>
+    <li>
+      <span class="ref-num">[8]</span>
+      <strong>NASA LP DAAC</strong>.
+      <em>MODIS MOD14/MYD14 Thermal Anomalies and Fire — User Guide.</em>
+      <a href="https://lpdaac.usgs.gov/products/mod14v061/">lpdaac.usgs.gov</a><br>
+      <span class="small">Documentación oficial productos MODIS Fire.</span>
+    </li>
+    <li>
+      <span class="ref-num">[9]</span>
+      <strong>Google Earth Engine — MODIS Fire Collection.</strong>
+      <a href="https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MOD14A1">MOD14A1</a> ·
+      <a href="https://developers.google.com/earth-engine/datasets/catalog/MODIS_061_MYD14A1">MYD14A1</a><br>
+      <span class="small">API para consulta programática de FRP.</span>
+    </li>
+    <li>
+      <span class="ref-num">[10]</span>
+      <strong>Copernicus Climate Change Service (C3S)</strong>.
+      <em>ERA5-Land hourly data from 1950 to present.</em>
+      <a href="https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land">Climate Data Store</a>
+    </li>
+    <li>
+      <span class="ref-num">[11]</span>
+      <strong>CONAF / itrend — Datos para Resiliencia.</strong>
+      <em>Registro de incendios forestales en Chile.</em><br>
+      DOI: <a href="https://doi.org/10.71578/UXAUN5">10.71578/UXAUN5</a> ·
+      <a href="https://datospararesiliencia.cl">datospararesiliencia.cl</a>
+    </li>
+    <li>
+      <span class="ref-num">[12]</span>
+      <strong>Pedernera, P., et al. (2017)</strong>.
+      <em>Modelos de combustibles para Chile.</em> CONAF / INIA.<br>
+      <span class="small">Carga combustible por tipo de vegetación nativa chilena.</span>
+    </li>
+    <li>
+      <span class="ref-num">[13]</span>
+      <strong>Scott, J. H., &amp; Burgan, R. E. (2005)</strong>.
+      <em>Standard Fire Behavior Fuel Models: A Comprehensive Set for Use with Rothermel's
+      Surface Fire Spread Model.</em> USDA Forest Service General Technical Report RMRS-GTR-153.<br>
+      <a href="https://www.fs.usda.gov/research/treesearch/9521">USDA Treesearch</a>
+    </li>
+    <li>
+      <span class="ref-num">[14]</span>
+      <strong>Jain, P., Coogan, S. C. P., Subramanian, S. G., et al. (2020)</strong>.
+      <em>A review of machine learning applications in wildfire science and management.</em>
+      <em>Environmental Reviews</em>, 28(4), 478–505.<br>
+      DOI: <a href="https://doi.org/10.1139/er-2020-0019">10.1139/er-2020-0019</a><br>
+      <span class="small">Estado del arte ML en ciencia del fuego, incluye análisis de XGBoost.</span>
+    </li>
+  </ol>
+</section>
+
+<!-- =================== APÉNDICES =================== -->
+<section id="ap-a">
+  <h2>Apéndice A. Glosario CONAF (códigos de escenario) <a class="heading-anchor" href="#ap-a">#</a></h2>
+
+  <p>
+    El campo <code>escenario</code> de CONAF clasifica el contexto físico-geográfico del
+    incendio. <strong>No usar como feature</strong> (es codificado ex-post — ver
+    <a href="#features">Sección 7</a>), pero útil para análisis exploratorio.
+  </p>
+
+  <table>
+    <thead>
+      <tr><th>Código</th><th>Nombre</th><th>Descripción</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>IFor-PI</code></td><td>Plantaciones</td><td>Incendio en plantaciones forestales (pino, eucalipto comercial)</td></tr>
+      <tr><td><code>IFor-Vn</code></td><td>Vegetación natural</td><td>Bosque nativo o matorral natural</td></tr>
+      <tr><td><code>IFIUr-Fo</code></td><td>Interfaz urbano-forestal</td><td>Fuego en zona Wildland-Urban Interface (WUI)</td></tr>
+      <tr><td><code>IFASP</code></td><td>Área Silvestre Protegida</td><td>Parque nacional, reserva, monumento natural</td></tr>
+      <tr><td><code>IFCo</code></td><td>Cordillera</td><td>Sobre 1.000 m.s.n.m., alta cordillera</td></tr>
+      <tr><td><code>IFCSo</code></td><td>Conflicto social</td><td>Asociado a contexto de conflicto territorial</td></tr>
+      <tr><td><code>IFSu</code></td><td>Subterráneo</td><td>Combustión bajo superficie (turbas, raíces)</td></tr>
+      <tr><td><code>IFIns</code></td><td>Insular</td><td>En isla (Juan Fernández, Isla de Pascua, Chiloé)</td></tr>
+      <tr><td><code>No definido</code></td><td>—</td><td>Sin clasificación registrada</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="ap-b">
+  <h2>Apéndice B. Por qué no usar MODIS-FRP como feature <a class="heading-anchor" href="#ap-b">#</a></h2>
+
+  <p>
+    Aunque MODIS-FRP es central para construir el label L2, <strong>no puede ser feature
+    del modelo XGBoost</strong>. Razones:
+  </p>
+
+  <ol>
+    <li>
+      <strong>Leakage temporal directo</strong>. FRP se mide <em>durante</em> el fuego activo,
+      no en el momento de ignición. Para t=0 (instante de inicio) no hay aún ningún píxel
+      MODIS detectado. Incluirlo como feature equivale a darle al modelo el resultado.
+    </li>
+    <li>
+      <strong>Construye el label</strong>. L2 = (FLI derivada de FRP ≥ 10.000). Usar FRP
+      como feature simultáneamente como target sería un loop trivial: el modelo aprendería
+      <code>label = FRP ≥ threshold</code> con 100% accuracy y SHAP totalmente dominada por FRP.
+    </li>
+    <li>
+      <strong>Caso de uso</strong>. El modelo se quiere usar operacionalmente al momento de
+      ignición, cuando todavía no hay paso del satélite. MODIS pasa cada 6–12 horas;
+      el fuego ya está corriendo cuando llega la primera detección.
+    </li>
+  </ol>
+
+  <p>
+    MODIS-FRP es un <strong>instrumento de etiquetado</strong>, no una feature predictiva.
+    Mismo principio para <code>duracion_minutos</code> y <code>superficie_quemada_total_ha</code>.
+  </p>
+</section>
+
+<section id="ap-c">
+  <h2>Apéndice C. Snippet completo Google Earth Engine <a class="heading-anchor" href="#ap-c">#</a></h2>
+
+  <p>
+    Código de referencia (Python) para consultar FRP MODIS para una lista de eventos.
+    Requiere autenticación previa: <code>earthengine authenticate</code>.
+  </p>
+
+  <pre><code>import ee
+import pandas as pd
+from tqdm import tqdm
+
+ee.Initialize()
+
+def query_modis_frp_batch(events_df: pd.DataFrame,
+                          buffer_km: float = 5.0,
+                          window_days: int = 7) -> pd.DataFrame:
+    """
+    Para cada evento en `events_df` (con columnas latitud, longitud,
+    fecha_hora_inicio_utc, duracion_minutos), consulta el FRP máximo
+    detectado por MOD14A1 + MYD14A1 en una ventana espacio-temporal.
+
+    Returns: events_df con columna adicional 'frp_max_mw'.
+    """
+    results = []
+
+    for idx, row in tqdm(events_df.iterrows(), total=len(events_df)):
+        point = ee.Geometry.Point([row["longitud"], row["latitud"]])
+        region = point.buffer(buffer_km * 1000)
+
+        start = pd.to_datetime(row["fecha_hora_inicio_utc"])
+        # Ventana = max(duración real, window_days)
+        if pd.notna(row["duracion_minutos"]) and row["duracion_minutos"] &gt; 0:
+            end = start + pd.Timedelta(minutes=row["duracion_minutos"])
+        else:
+            end = start + pd.Timedelta(days=window_days)
+
+        try:
+            col_terra = ee.ImageCollection("MODIS/061/MOD14A1")
+            col_aqua = ee.ImageCollection("MODIS/061/MYD14A1")
+            col = (col_terra.merge(col_aqua)
+                     .filterBounds(region)
+                     .filterDate(start.isoformat(), end.isoformat())
+                     .select("FirePower"))
+
+            if col.size().getInfo() == 0:
+                results.append(None)
+                continue
+
+            max_img = col.max()
+            val = max_img.reduceRegion(
+                reducer=ee.Reducer.max(),
+                geometry=region,
+                scale=1000,
+                maxPixels=1e6
+            ).get("FirePower").getInfo()
+            results.append(val)
+        except Exception as e:
+            print(f"Error en evento {idx}: {e}")
+            results.append(None)
+
+    events_df = events_df.copy()
+    events_df["frp_max_mw"] = results
+    return events_df
+
+
+# Uso:
+# candidatos = df[df["superficie_quemada_total_ha"] &gt; 50]
+# resultado = query_modis_frp_batch(candidatos)
+# resultado.to_parquet("data/processed/modis_frp_results.parquet")
+</code></pre>
+
+  <div class="callout callout-warning">
+    <span class="callout-title">Consideraciones operacionales</span>
+    <ul>
+      <li>Earth Engine tiene cuotas de uso. Para ~2.000 eventos candidatos, considera
+          procesar en batches y guardar resultados intermedios.</li>
+      <li>Eventos con <code>fecha_hora_inicio_utc</code> nulo (~6 casos en el dataset)
+          requieren tratamiento manual.</li>
+      <li>Para eventos &lt; 2002, MOD14 (Terra) no está disponible; solo MOD14 hay desde
+          febrero 2000. MYD14 (Aqua) desde julio 2002.</li>
+    </ul>
+  </div>
+</section>
+
+<footer style="margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 0.85rem;">
+  <p>
+    Documento generado para el proyecto XAI / clasificación de megaincendios.<br>
+    Última actualización: Mayo 2026 · Versión 1.0 ·
+    <a href="../references/Tedim2018_DefiningEWE.pdf">PDF Tedim 2018 local</a>
+  </p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>
