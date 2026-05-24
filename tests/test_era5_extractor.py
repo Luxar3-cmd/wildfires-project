@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from src.era5_extractor import extract_point
+from src.era5 import extract_point
 
 
 class Era5ExtractorTest(unittest.TestCase):

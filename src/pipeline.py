@@ -1,4 +1,4 @@
-"""Pipeline CONAF + ERA5 con eventos opcionales para monitoreo."""
+"""Pipeline CONAF + ERA5: descarga, enriquece y produce parquet final."""
 from __future__ import annotations
 
 import logging
@@ -6,20 +6,18 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 
-from src.attribution import attribution_payload, write_attribution_sidecar
 from src.conaf_loader import CONAF_RAW_DIR, load_conaf
-from src.config import CHILE_BBOX, DATA_PROCESSED
+from src.config import CHILE_BBOX, DATA_PROCESSED, ERA5_RAW_DIR
 from src.enrichment import enrich_conaf_with_era5
-from src.era5_downloader import download_era5_months, era5_month_path, era5_year_path
-from src.feature_report import generate_feature_report
+from src.era5 import download_era5_months, era5_month_path, era5_year_path
+from src.reporting import attribution_payload, generate_feature_report, write_attribution_sidecar
 
 logger = logging.getLogger(__name__)
 
-PipelineEvent = Callable[[str, str, str, dict[str, Any] | None], None]
 LATEST_PARQUET = DATA_PROCESSED / "conaf_enriched_latest.parquet"
 
 
@@ -45,26 +43,14 @@ def filter_conaf_years(conaf: pd.DataFrame, start_year: int, end_year: int) -> p
 	df = conaf.copy()
 	ts = pd.to_datetime(df[ts_col], errors="coerce")
 	mask = ts.dt.year.between(start_year, end_year)
-	return df.loc[mask].copy()
-
-
-def _emit(
-	reporter: PipelineEvent | None,
-	stage: str,
-	message: str,
-	level: str = "info",
-	data: dict[str, Any] | None = None,
-	**extra: Any,
-) -> None:
-	"""Emite un evento al reporter (si hay) y logea simultáneamente.
-
-	`data` y `**extra` son alternativos: usa `data={}` para dicts ya construidos
-	o `**extra` para kwargs simples. Si ambos están presentes, `data` tiene prioridad.
-	"""
-	payload = data or extra or None
-	if reporter:
-		reporter(stage, message, level, payload)
-	getattr(logger, level if level in {"debug", "info", "warning", "error"} else "info")(message)
+	result = df.loc[mask].copy()
+	if result.empty:
+		logger.warning(
+			"filter_conaf_years: ningún registro en %d-%d (columna '%s'). "
+			"¿Formato de fecha incorrecto o años fuera del dataset?",
+			start_year, end_year, ts_col,
+		)
+	return result
 
 
 def _year_counts(df: pd.DataFrame) -> dict[str, int]:
@@ -100,25 +86,27 @@ def _needed_year_months(df: pd.DataFrame) -> list[tuple[int, int, tuple[int, ...
 	for value in ts:
 		key = (int(value.year), int(value.month))
 		needed.setdefault(key, set()).add(int(value.day))
+	if not needed:
+		logger.warning("_needed_year_months: ningún timestamp válido en '%s' — no se descargará ERA5", ts_col)
 	return sorted((year, month, tuple(sorted(days))) for (year, month), days in needed.items())
 
 
-def _era5_inventory(year_months: list[tuple[int, int, tuple[int, ...]]]) -> dict[str, bool]:
+def _era5_inventory(year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR) -> dict[str, bool]:
 	"""Mapea cada (año, mes) a si existe algún NetCDF ERA5 local (mensual o anual)."""
 	inventory = {}
 	for year, month, _days in year_months:
-		month_path = era5_month_path(year, month)
-		year_path = era5_year_path(year)
+		month_path = era5_month_path(year, month, era5_dir)
+		year_path = era5_year_path(year, era5_dir)
 		inventory[f"{year}-{month:02d}"] = month_path.exists() or year_path.exists()
 	return inventory
 
 
-def _era5_sizes(year_months: list[tuple[int, int, tuple[int, ...]]]) -> dict[str, int | None]:
+def _era5_sizes(year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR) -> dict[str, int | None]:
 	"""Mapea cada (año, mes) al tamaño en bytes del NetCDF local correspondiente."""
 	sizes = {}
 	for year, month, _days in year_months:
-		month_path = era5_month_path(year, month)
-		year_path = era5_year_path(year)
+		month_path = era5_month_path(year, month, era5_dir)
+		year_path = era5_year_path(year, era5_dir)
 		path = month_path if month_path.exists() else year_path
 		sizes[f"{year}-{month:02d}"] = path.stat().st_size if path.exists() else None
 	return sizes
@@ -148,14 +136,9 @@ def _download_bbox(df: pd.DataFrame, margin: float = 0.5) -> dict[str, float]:
 	}
 
 
-def _prepare_conaf(
-	start_year: int,
-	end_year: int,
-	refresh_conaf: bool,
-	reporter: PipelineEvent | None,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _prepare_conaf(start_year: int, end_year: int, refresh_conaf: bool) -> tuple[pd.DataFrame, dict[str, Any]]:
 	"""Carga CONAF, filtra por rango de años y retorna (df, resumen)."""
-	_emit(reporter, "conaf", f"Cargando CONAF (refresh={refresh_conaf})", data={"files": _available_conaf_files()})
+	logger.info("Cargando CONAF (refresh=%s); archivos disponibles: %s", refresh_conaf, _available_conaf_files())
 	conaf = load_conaf(refresh=refresh_conaf)
 	conaf_year_counts = _year_counts(conaf)
 	requested_years = [str(year) for year in range(start_year, end_year + 1)]
@@ -166,23 +149,18 @@ def _prepare_conaf(
 		"year_counts": conaf_year_counts,
 		"missing_requested_years": missing_conaf_years,
 	}
-	_emit(reporter, "conaf", f"CONAF cargado: {len(conaf)} filas", data=conaf_summary)
+	logger.info("CONAF cargado: %d filas", len(conaf))
 
 	conaf = filter_conaf_years(conaf, start_year, end_year)
 	conaf_summary["rows_filtered"] = int(len(conaf))
 	if conaf.empty:
-		_emit(reporter, "conaf", f"No hay registros CONAF locales para {start_year}-{end_year}", level="warning", rows_filtered=0)
+		logger.warning("No hay registros CONAF locales para %d-%d", start_year, end_year)
 	else:
-		_emit(reporter, "conaf", f"Filtrado {start_year}-{end_year}: {len(conaf)} filas", rows_filtered=int(len(conaf)))
+		logger.info("Filtrado %d-%d: %d filas", start_year, end_year, len(conaf))
 	return conaf, conaf_summary
 
 
-def _write_outputs(
-	enriched: pd.DataFrame,
-	versioned_path: Path,
-	params: dict[str, Any],
-	reporter: PipelineEvent | None,
-) -> dict[str, Any]:
+def _write_outputs(enriched: pd.DataFrame, versioned_path: Path, params: dict[str, Any]) -> dict[str, Any]:
 	"""Copia al latest, escribe sidecars de atribución y genera feature report."""
 	LATEST_PARQUET.parent.mkdir(parents=True, exist_ok=True)
 	if versioned_path.resolve() != LATEST_PARQUET.resolve():
@@ -212,7 +190,7 @@ def _write_outputs(
 		"features_report_json_path": features_report["paths"]["json"],
 		"features_sidecar_path": features_report["paths"]["sidecar"],
 	}
-	_emit(reporter, "output", f"Dataset guardado: {versioned_path}", data=output_summary)
+	logger.info("Dataset guardado: %s (%d filas, %d cols)", versioned_path, len(enriched), enriched.shape[1])
 	return output_summary
 
 
@@ -222,19 +200,10 @@ def run_pipeline(
 	skip_download: bool = False,
 	refresh_conaf: bool = False,
 	out_path: Path | None = None,
-	reporter: PipelineEvent | None = None,
+	era5_dir: Path | None = None,
 ) -> dict[str, Any]:
-	"""Ejecuta el pipeline completo y retorna un resumen serializable.
-
-	El summary tiene la forma:
-	  {
-	    "params": {...},
-	    "conaf": {"rows_total": int, "rows_filtered": int, "year_counts": {...}, ...},
-	    "era5": {"before": {...}, "after": {...}, "missing_months": [...], ...},
-	    "output": {"path": str, "rows": int, "era5_match_quality": {...}, ...},
-	    "attribution": {...},
-	  }
-	"""
+	"""Ejecuta el pipeline completo y retorna un resumen serializable."""
+	_era5_dir = era5_dir or ERA5_RAW_DIR
 	versioned_path = out_path or versioned_output_path(start_year, end_year)
 	params = {
 		"start_year": start_year,
@@ -242,10 +211,11 @@ def run_pipeline(
 		"skip_download": skip_download,
 		"refresh_conaf": refresh_conaf,
 		"out_path": str(versioned_path),
+		"era5_dir": str(_era5_dir),
 	}
 	summary: dict[str, Any] = {"params": params}
 
-	conaf, conaf_summary = _prepare_conaf(start_year, end_year, refresh_conaf, reporter)
+	conaf, conaf_summary = _prepare_conaf(start_year, end_year, refresh_conaf)
 	summary["conaf"] = conaf_summary
 
 	# Calcula qué meses de ERA5 se necesitan y el bbox ajustado a los datos reales
@@ -253,46 +223,34 @@ def run_pipeline(
 	download_bbox = _download_bbox(conaf)
 
 	# Inventario antes de descarga: permite reportar qué archivos ya existían vs. nuevos
-	era5_before = _era5_inventory(year_months)
+	era5_before = _era5_inventory(year_months, _era5_dir)
 	summary["era5"] = {
 		"before": era5_before,
-		"sizes_before": _era5_sizes(year_months),
+		"sizes_before": _era5_sizes(year_months, _era5_dir),
 		"needed_months": [f"{year}-{month:02d}" for year, month, _days in year_months],
 		"needed_days": {f"{year}-{month:02d}": list(days) for year, month, days in year_months},
 		"bbox": download_bbox,
 	}
 
 	if skip_download:
-		_emit(reporter, "era5", "Skip de descarga ERA5 activo", data={"inventory": era5_before})
+		logger.info("Skip de descarga ERA5 activo")
 	else:
-		_emit(reporter, "era5", f"Descargando ERA5-Land para {len(year_months)} mes(es)", data={"inventory": era5_before})
+		logger.info("Descargando ERA5-Land para %d mes(es)", len(year_months))
 		t0 = time.monotonic()
-		download_era5_months(year_months, bbox=download_bbox)
+		download_era5_months(year_months, bbox=download_bbox, out_dir=_era5_dir)
 		summary["era5"]["download_seconds"] = round(time.monotonic() - t0, 2)
 
 	# Inventario después de descarga: permite detectar qué meses siguen faltando
-	era5_after = _era5_inventory(year_months)
+	era5_after = _era5_inventory(year_months, _era5_dir)
 	summary["era5"]["after"] = era5_after
-	summary["era5"]["sizes_after"] = _era5_sizes(year_months)
+	summary["era5"]["sizes_after"] = _era5_sizes(year_months, _era5_dir)
 	summary["era5"]["missing_months"] = [month for month, exists in era5_after.items() if not exists]
-	downloaded = {
-		month: size for month, size in summary["era5"]["sizes_after"].items()
-		if size and summary["era5"]["sizes_before"].get(month) != size
-	}
-	if downloaded:
-		_emit(reporter, "era5", "ERA5 descargado", data={"sizes_bytes": downloaded})
 	if summary["era5"]["missing_months"]:
-		_emit(
-			reporter,
-			"era5",
-			f"Faltan NetCDF ERA5: {', '.join(summary['era5']['missing_months'])}",
-			level="warning",
-			data={"missing_months": summary["era5"]["missing_months"]},
-		)
+		logger.warning("Faltan NetCDF ERA5: %s", ", ".join(summary["era5"]["missing_months"]))
 
-	_emit(reporter, "enrichment", "Enriqueciendo CONAF con ERA5")
-	enriched = enrich_conaf_with_era5(conaf, out_path=versioned_path, save=True, reporter=reporter, bbox=download_bbox)
+	logger.info("Enriqueciendo CONAF con ERA5")
+	enriched = enrich_conaf_with_era5(conaf, era5_dir=_era5_dir, out_path=versioned_path, save=True, bbox=download_bbox)
 
-	summary["output"] = _write_outputs(enriched, versioned_path, params, reporter)
+	summary["output"] = _write_outputs(enriched, versioned_path, params)
 	summary["attribution"] = attribution_payload()
 	return summary
