@@ -1,7 +1,22 @@
-"""Reportes de features para artefactos CONAF, ERA5 y output enriquecido."""
+"""Reporting del pipeline: atribución de fuentes y perfil de features.
+
+Dos responsabilidades cohesivas en un solo módulo:
+
+1. Atribución (sidecar JSON `.attribution.json`):
+   - metadata de fuentes primarias (CONAF, ERA5-Land)
+   - notas de licencia CC-BY 4.0 obligatorias
+   - registro de provenance del dataset derivado
+
+2. Feature report (sidecar JSON `.features.json` + Markdown `features_report.md`):
+   - perfil por columna (dtype, nulls, ejemplos, min/max)
+   - clasificación de roles (conaf_context, era5_raw, era5_derived, etc.)
+   - inventario de NetCDFs ERA5 locales
+"""
 from __future__ import annotations
 
 import json
+import logging
+import math
 import re
 import unicodedata
 from pathlib import Path
@@ -10,8 +25,9 @@ from typing import Any
 import pandas as pd
 
 from src.config import CONAF_RAW_DIR, DATA_INTERIM, DATA_PROCESSED, ERA5_RAW_DIR
-from src.era5_extractor import EXPECTED_KEYS, INVARIANT_KEYS
-from src.utils import _json_safe_default
+from src.era5 import EXPECTED_KEYS, INVARIANT_KEYS
+
+logger = logging.getLogger(__name__)
 
 # xarray es opcional: si no está instalado, el inventario ERA5 se genera sin
 # inspeccionar el contenido de los NetCDF (solo tamaños).
@@ -21,10 +37,116 @@ try:
 except ImportError:
 	_xr_available = False
 
+
+# ============================================================
+# Sección 1 — Atribución de fuentes
+# ============================================================
+
+# Metadata de las fuentes primarias usadas por el pipeline.
+# "required_notice" refleja la obligación de atribución de CC BY 4.0 para ERA5-Land.
+DATA_ATTRIBUTION = {
+	"conaf": {
+		"title": "Registro histórico de incendios forestales",
+		"provider": "CONAF / itrend - Datos para Resiliencia",
+		"source": "https://datospararesiliencia.cl",
+		"doi": "10.71578/UXAUN5",
+		"notes": "Ver términos del dataset en la plataforma de origen.",
+	},
+	"era5_land": {
+		"title": "ERA5-Land hourly data from 1981 to present",
+		"provider": "Copernicus Climate Change Service (C3S) / ECMWF",
+		"creator": "Muñoz Sabater, J.",
+		"year": 2019,
+		"doi": "10.24381/cds.e2161bac",
+		"source": "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land",
+		"license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+		"license_url": "https://creativecommons.org/licenses/by/4.0/",
+		"required_notice": (
+			"Al compartir outputs que incluyan o deriven de ERA5-Land, dar crédito a la fuente, "
+			"incluir el enlace a CC BY 4.0 e indicar cambios realizados."
+		),
+	},
+}
+
+# Descripción del dataset derivado: qué transformaciones se aplicaron sobre las fuentes.
+DERIVED_DATASET_NOTICE = {
+	"description": "Dataset derivado que cruza eventos CONAF con variables climáticas ERA5-Land por ubicación y timestamp aproximado.",
+	"changes": [
+		"Limpieza y normalización de columnas CONAF.",
+		"Filtrado por rango temporal solicitado.",
+		"Extracción nearest-neighbor de ERA5-Land por latitud, longitud y timestamp.",
+		"Cálculo de features derivadas: temperatura Celsius, humedad relativa, VPD, viento y precipitación en mm.",
+	],
+	"no_endorsement": "La atribución no implica respaldo de CONAF, itrend, Copernicus, C3S o ECMWF.",
+	"no_warranty": "Las fuentes se entregan sin garantías según sus términos/licencias aplicables.",
+}
+
+
+def attribution_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+	"""Ensambla el payload completo de atribución.
+
+	`extra` permite añadir contexto de ejecución (parámetros del run, versión, etc.)
+	bajo la clave "run" del JSON resultante.
+	"""
+	payload = {
+		"sources": DATA_ATTRIBUTION,
+		"derived_dataset": DERIVED_DATASET_NOTICE,
+	}
+	if extra:
+		payload["run"] = extra
+	return payload
+
+
+def write_attribution_sidecar(out_path: Path, extra: dict[str, Any] | None = None) -> Path:
+	"""Escribe el sidecar JSON junto al artefacto indicado.
+
+	El archivo se nombra igual que el artefacto pero con extensión .attribution.json
+	(e.g. conaf_enriched_2002_2020.parquet → conaf_enriched_2002_2020.attribution.json).
+	"""
+	sidecar = out_path.with_suffix(".attribution.json")
+	sidecar.write_text(
+		json.dumps(attribution_payload(extra), ensure_ascii=False, indent=2),
+		encoding="utf-8",
+	)
+	return sidecar
+
+
+# ============================================================
+# Sección 2 — Helper JSON safe
+# ============================================================
+
+
+def _json_safe_default(obj: Any) -> Any:
+	"""Handler para json.dumps(default=...) — cubre tipos no estándar comunes.
+
+	Convierte: Path → str, numpy scalars → Python nativo, datetime → isoformat,
+	pd.NaN / float NaN / inf → None. Todo lo demás cae a str().
+	"""
+	if isinstance(obj, Path):
+		return str(obj)
+	try:
+		if pd.isna(obj):
+			return None
+	except (TypeError, ValueError):
+		pass
+	if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+		return None
+	if hasattr(obj, "isoformat"):
+		return obj.isoformat()
+	if hasattr(obj, "item"):
+		# numpy scalar (int64, float32, etc.) → Python nativo
+		return obj.item()
+	return str(obj)
+
+
+# ============================================================
+# Sección 3 — Feature report
+# ============================================================
+
 CONAF_CLEAN_PARQUET = DATA_INTERIM / "conaf_clean.parquet"
 
 # Conjuntos de columnas ERA5 para la clasificación de roles.
-# Derivados dinámicamente desde era5_extractor para mantener coherencia al agregar variables.
+# Derivados dinámicamente desde src.era5 para mantener coherencia al agregar variables.
 ERA5_RAW_COLUMNS = set(EXPECTED_KEYS)
 ERA5_INVARIANT_COLUMNS = set(INVARIANT_KEYS)
 ERA5_DERIVED_COLUMNS = {
@@ -59,8 +181,8 @@ def _safe_json_dump(payload: dict[str, Any], path: Path) -> None:
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
-	first_line = path.read_text(encoding="utf-8", errors="replace").splitlines()[0]
-	sep = "|" if "|" in first_line else ","
+	lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+	sep = "|" if lines and "|" in lines[0] else ","
 	return pd.read_csv(path, sep=sep, low_memory=False)
 
 
@@ -141,7 +263,6 @@ def _clean_value(value: Any) -> Any:
 	if isinstance(value, bytes):
 		return value.hex()[:64]
 	if isinstance(value, float):
-		import math
 		if math.isnan(value) or math.isinf(value):
 			return None
 	if hasattr(value, "isoformat"):
@@ -215,25 +336,34 @@ def _profile_era5_files() -> dict[str, Any]:
 
 	inventory = []
 	for path in files:
-		with xr.open_dataset(path) as ds:
+		try:
+			with xr.open_dataset(path) as ds:
+				inventory.append({
+					"name": path.name,
+					"path": str(path),
+					"bytes": path.stat().st_size,
+					"dims": {key: int(value) for key, value in ds.sizes.items()},
+					"features": [
+						{
+							"name": name,
+							"dtype": str(var.dtype),
+							"dims": list(var.dims),
+							"shape": [int(size) for size in var.shape],
+							"source": "era5_land",
+							"role": "era5_raw",
+							"units": var.attrs.get("units"),
+							"long_name": var.attrs.get("long_name"),
+						}
+						for name, var in ds.data_vars.items()
+					],
+				})
+		except Exception as exc:
+			logger.warning("No se pudo leer %s: %s", path.name, exc)
 			inventory.append({
 				"name": path.name,
 				"path": str(path),
-				"bytes": path.stat().st_size,
-				"dims": {key: int(value) for key, value in ds.sizes.items()},
-				"features": [
-					{
-						"name": name,
-						"dtype": str(var.dtype),
-						"dims": list(var.dims),
-						"shape": [int(size) for size in var.shape],
-						"source": "era5_land",
-						"role": "era5_raw",
-						"units": var.attrs.get("units"),
-						"long_name": var.attrs.get("long_name"),
-					}
-					for name, var in ds.data_vars.items()
-				],
+				"bytes": path.stat().st_size if path.exists() else None,
+				"error": str(exc),
 			})
 	return {**base, "files": inventory}
 
@@ -356,6 +486,20 @@ def generate_feature_report(enriched_path: Path, out_dir: Path = DATA_PROCESSED)
 		"sidecar": str(sidecar_path),
 	}
 	_safe_json_dump(report, json_path)
-	_safe_json_dump(report, sidecar_path)
+	if enriched_path.exists():
+		_safe_json_dump(report, sidecar_path)
 	_write_markdown(report, md_path)
 	return report
+
+
+__all__ = [
+	# Atribución
+	"attribution_payload",
+	"write_attribution_sidecar",
+	"DATA_ATTRIBUTION",
+	"DERIVED_DATASET_NOTICE",
+	# Feature report
+	"generate_feature_report",
+	# Helper JSON
+	"_json_safe_default",
+]
