@@ -442,21 +442,21 @@
   </p>
 
   <p>
-    Mientras el pipeline MODIS-FRP no esté implementado se usa un label <strong>proxy
-    preliminar L1b</strong>: threshold estadístico <strong>P99 regional</strong> sobre
-    <code>superficie_quemada_total_ha</code>, que respeta el régimen ecológico de cada bioma
-    chileno. L1b permite (a) entrenar y validar el pipeline de modelado end-to-end mientras se
-    construye L2, y (b) ofrecer un análisis de sensibilidad en el paper: <em>¿qué cambia si
-    el target es un proxy estadístico de superficie en lugar del criterio físico de EWE?</em>
+    El pipeline L2 ya está integrado en el ETL mediante NASA FIRMS Area API
+    (<code>MODIS_SP</code>) y produce <code>label_l2</code> junto con
+    <code>fli_estimado_kw_m</code>, <code>modis_n_matches</code> y
+    <code>modis_frp_max_mw</code> cuando existe <code>FIRMS_MAP_KEY</code>. El label
+    <strong>L1b</strong> (P99 regional sobre <code>superficie_quemada_total_ha</code>) queda
+    como proxy secundario para sensitivity analysis, no como target principal.
   </p>
 
   <p>
-    El alcance actual está acotado a <strong>2016-2017</strong> (12.381 eventos, 13 regiones), por
-    cobertura disponible del enriquecimiento ERA5. La infraestructura ETL es reproducible
-    end-to-end desde la API Dataverse de CONAF y Copernicus CDS. El roadmap inmediato combina dos
-    líneas paralelas: (i) implementar el pipeline MODIS-FRP → FLI para construir L2;
-    (ii) entrenar XGBoost+SHAP con L1b como baseline operacional preliminar para validar el
-    pipeline de modelado y producir el primer análisis de drivers.
+    El alcance de trabajo queda fijado en la corrida <strong>2012-2018</strong> y el análisis
+    de modelado se concentra en tres regiones CONAF históricas: <strong>Maule</strong>,
+    <strong>Biobío</strong> y <strong>Araucanía</strong>. En este período, <strong>Ñuble</strong>
+    no aparece como región separada en CONAF y queda absorbida dentro de Biobío. La
+    infraestructura ETL es reproducible end-to-end desde Dataverse CONAF, Copernicus CDS y
+    NASA FIRMS.
   </p>
 
   <div class="callout callout-info">
@@ -503,12 +503,10 @@
   </ol>
 
   <div class="callout callout-info">
-    <span class="callout-title">Pregunta con label proxy preliminar</span>
-    Mientras el pipeline MODIS-FRP no esté implementado, la pregunta operacional se aproxima
-    con <strong>L1b</strong>: «¿la superficie final superará el P99 regional?». Esta formulación
-    proxy es <em>operacionalmente útil</em> y <em>científicamente honesta</em>: la severidad
-    física (FLI) y la superficie quemada están correlacionadas, pero no son equivalentes. El
-    análisis comparativo L1b vs L2 es parte de la contribución del paper.
+    <span class="callout-title">Label proxy secundario</span>
+    <strong>L1b</strong> responde la pregunta auxiliar «¿la superficie final superará el P99
+    regional?». Esta formulación proxy es útil para sensitivity analysis: la severidad física
+    (FLI) y la superficie quemada están correlacionadas, pero no son equivalentes.
   </div>
 
   <h3>2.3 Por qué clasificación binaria y no regresión</h3>
@@ -535,9 +533,8 @@
     <li><strong>H2</strong>: la combinación VPD × wind_speed × humedad de suelo (swvl) captura el
         régimen sinóptico de día catastrófico mejor que cada variable por separado — SHAP debería
         mostrar interacciones fuertes.</li>
-    <li><strong>H3</strong>: los drivers difieren entre regímenes ecológicos. El modelo entrenado
-        sin estratificación regional aprenderá señales mediterráneas (Biobío, Maule, Valparaíso)
-        más que patagónicas (Aysén, Magallanes), por el desbalance muestral.</li>
+    <li><strong>H3</strong>: los drivers difieren entre Maule, Biobío y Araucanía; leave-one-region-out
+        permite separar señal regional robusta de patrones locales.</li>
   </ul>
 </section>
 
@@ -730,14 +727,15 @@
   <p>
     El módulo <code>src/era5_downloader.py</code> consulta la Climate Data Store (CDS) de
     Copernicus solicitando NetCDF mensuales para el bounding box que cubre las regiones de
-    estudio: <code>CHILE_BBOX = {north: -34.0, west: -74.0, south: -42.0, east: -70.0}</code>
-    (zona centro-sur que concentra &gt;90% de los eventos). Para cada mes se solicitan
-    <strong>17 variables</strong> horarias y <strong>8 invariantes estáticas</strong>:
+    estudio: <code>CHILE_BBOX = {north: -34.0, west: -74.0, south: -42.0, east: -70.0}</code>.
+    Para Maule, Biobío y Araucanía en 2012-2018, este bbox cubre el 100% de los eventos
+    georreferenciados. Para cada mes se solicitan <strong>19 variables</strong> horarias y
+    <strong>6 invariantes estáticas</strong>:
   </p>
 
   <div class="two-col">
     <div class="two-col-card allowed">
-      <h4>17 variables horarias ERA5-Land</h4>
+      <h4>19 variables horarias ERA5-Land</h4>
       <ul>
         <li><strong>Temperatura</strong>: <code>t2m</code> (2m air), <code>d2m</code> (2m dewpoint)</li>
         <li><strong>Viento</strong>: <code>u10</code>, <code>v10</code> (componentes a 10 m)</li>
@@ -747,14 +745,14 @@
         <li><strong>Temperatura suelo</strong>: <code>stl1-4</code> (mismas 4 capas)</li>
         <li><strong>Evaporación</strong>: <code>pev</code> (potential), <code>e</code> (total),
             <code>evavt</code> (from vegetation transpiration)</li>
+        <li><strong>Índices foliares</strong>: <code>lai_hv</code>, <code>lai_lv</code></li>
       </ul>
     </div>
     <div class="two-col-card allowed">
-      <h4>8 invariantes (descargadas 1×)</h4>
+      <h4>6 invariantes (descargadas 1×)</h4>
       <ul>
         <li><strong>Vegetación</strong>: <code>cvh</code>, <code>cvl</code> (cover high/low),
             <code>tvh</code>, <code>tvl</code> (type high/low)</li>
-        <li><strong>Índices foliares</strong>: <code>lai_hv</code>, <code>lai_lv</code></li>
         <li><strong>Tipo de suelo</strong>: <code>slt</code></li>
         <li><strong>Máscara tierra/mar</strong>: <code>lsm</code></li>
       </ul>
@@ -805,32 +803,33 @@
 
   <h3>4.5 Dataset enriquecido actual</h3>
   <p>
-    El output vigente es <code>data/processed/conaf_enriched_latest.parquet</code> (alias de
-    <code>conaf_enriched_2016_2017.parquet</code>):
+    El output objetivo de la corrida es <code>data/processed/conaf_enriched_2012_2018.parquet</code>
+    y su copia <code>data/processed/conaf_enriched_latest.parquet</code>. La base CONAF
+    verificada para 2012-2018 tiene 42.963 eventos; el subset analítico Maule–Biobío–Araucanía
+    tiene 29.510 eventos:
   </p>
 
   <table>
     <thead><tr><th>Atributo</th><th>Valor</th></tr></thead>
     <tbody>
-      <tr><td>Filas</td><td class="num">12.381</td></tr>
-      <tr><td>Cobertura temporal</td><td>2016-2017 (7.475 en 2016 + 4.906 en 2017)</td></tr>
-      <tr><td>Regiones presentes</td><td>13 (Antofagasta, Tarapacá, Ñuble no aparecen en este subset)</td></tr>
-      <tr><td>Columnas</td><td class="num">66</td></tr>
-      <tr><td>Desglose</td><td>27 CONAF (28 − geometry) + 36 ERA5 (17 crudas + 11 derivadas + 8 invariantes) + 3 metadatos de matching</td></tr>
-      <tr><td>Tamaño en disco</td><td>2.3 MB</td></tr>
-      <tr><td>Mediana superficie</td><td class="num">0.45 ha</td></tr>
+      <tr><td>Run base</td><td class="num">42.963 eventos CONAF (2012-2018)</td></tr>
+      <tr><td>Subset analítico</td><td class="num">29.510 eventos</td></tr>
+      <tr><td>Regiones del estudio</td><td>Maule (4.703), Biobío (17.717), Araucanía (7.090)</td></tr>
+      <tr><td>Ñuble</td><td>No aparece separado en CONAF 2012-2018; queda dentro de Biobío histórico</td></tr>
+      <tr><td>Columnas esperadas con L2</td><td class="num">70</td></tr>
+      <tr><td>Desglose esperado</td><td>27 CONAF + 19 ERA5 crudas + 11 derivadas + 6 invariantes + 3 metadatos ERA5 + 4 MODIS/L2</td></tr>
+      <tr><td>Mediana superficie subset</td><td class="num">0.30 ha</td></tr>
+      <tr><td>P99 superficie subset</td><td class="num">148.3 ha</td></tr>
       <tr><td>Máximo superficie</td><td class="num">159.813 ha (Las Máquinas, Maule 2017)</td></tr>
-      <tr><td>Suma total quemada</td><td class="num">616.144 ha</td></tr>
+      <tr><td>Suma total quemada subset</td><td class="num">625.098 ha</td></tr>
     </tbody>
   </table>
 
   <div class="callout callout-warning">
-    <span class="callout-title">Por qué solo 2016-2017</span>
-    Los datos raw ERA5 están descargados para 2002-2020 (132 NetCDF mensuales), pero el ETL
-    de enrichment se ejecutó únicamente sobre la ventana 2016-2017 para acotar tiempo de
-    procesamiento y validar el pipeline. La expansión a 2002-2020 es un paso operacional, no
-    de investigación — el código y los inputs están listos. Ver
-    <a href="#roadmap">§10 Roadmap</a>.
+    <span class="callout-title">Estado de verificación</span>
+    Los conteos anteriores provienen de CONAF limpio filtrado a 2012-2018. Las métricas finales
+    de <code>label_l2</code> y <code>era5_match_quality</code> deben leerse del parquet enriquecido
+    2012-2018 una vez terminada la corrida completa.
   </div>
 </section>
 
@@ -871,8 +870,8 @@
           de combustible y velocidad de propagación. Predecir FLI es predecir el comportamiento
           peligroso, no solo el outcome.</li>
       <li><strong>Inmune al sesgo del período</strong>: la temporada 2016-2017 distorsiona los
-          P99 de hectáreas en Maule, O'Higgins, Metropolitana. FLI desde FRP se mide al momento
-          del fuego, no se calibra estadísticamente sobre la temporada.</li>
+          P99 de hectáreas en la zona central. FLI desde FRP se mide al momento del fuego,
+          no se calibra estadísticamente sobre la temporada.</li>
       <li><strong>Reportable internacionalmente</strong>: el paper final puede comparar drivers
           de EWE en Chile con los reportados en Australia (Zakari 2025), Mediterráneo europeo
           (Tedim 2018), o China (Liao 2025).</li>
@@ -880,25 +879,23 @@
   </div>
 
   <p>
-    <strong>Estado actual</strong>: L2 <em>no está implementado</em> todavía — requiere
-    autenticación Google Earth Engine + query MODIS MOD14A1/MYD14A1 + conversión FRP→FLI.
-    Es prioridad central del roadmap (ver <a href="#roadmap">§10</a>).
+    <strong>Estado actual</strong>: L2 está implementado en <code>src/modis.py</code> con
+    NASA FIRMS Area API. El paso se ejecuta dentro de <code>scripts/preprocess.py</code> salvo
+    que se use <code>--skip-modis</code>; si falta <code>FIRMS_MAP_KEY</code>, el pipeline
+    continúa sin <code>label_l2</code>.
   </p>
 
-  <h3>5.2 Etiquetado L1b — P99 regional (proxy preliminar + sensitivity analysis)</h3>
+  <h3>5.2 Etiquetado L1b — P99 regional (proxy secundario + sensitivity analysis)</h3>
   <p>
-    Mientras L2 no esté implementado se usa <strong>L1b</strong> como <em>proxy preliminar</em>:
-    threshold estadístico P99 regional sobre <code>superficie_quemada_total_ha</code>. La estrategia
-    es el percentil 99 calculado por separado en cada región sobre eventos positivos —
+    <strong>L1b</strong> queda como <em>proxy secundario</em>: threshold estadístico P99 regional
+    sobre <code>superficie_quemada_total_ha</code>. La estrategia es el percentil 99 calculado
+    por separado en cada región sobre eventos positivos —
     un umbral global único (e.g., 200 ha siguiendo Lannom et al. 2014) ignoraría la heterogeneidad
-    ecológica entre el régimen mediterráneo de Biobío y el patagónico de Aysén.
+    entre Maule, Biobío y Araucanía.
   </p>
 
-  <p>L1b cumple <strong>dos roles</strong>:</p>
+  <p>L1b cumple un rol secundario:</p>
   <ol>
-    <li><strong>Bootstrap del pipeline de modelado</strong>: permite entrenar XGBoost + SHAP de
-        extremo a extremo (features, split temporal, métricas, explicaciones locales) sin
-        esperar a tener L2. Cuando L2 esté listo, el pipeline solo cambia el target.</li>
     <li><strong>Análisis de sensibilidad en el paper</strong>: ¿qué drivers cambian si el target
         es un proxy estadístico (top 1% en hectáreas) vs el criterio físico de EWE? Drivers
         que aparecen en ambos modelos son señales robustas; drivers que solo aparecen en uno
@@ -915,17 +912,16 @@
 
   <p>
     P99 regional se eligió como threshold por (a) preserva el significado semántico de «mega» =
-    top 1% de severidad, (b) produce ~1% de positivos (~129 eventos en el subset), un imbalance
-    manejable con <code>scale_pos_weight</code> en XGBoost, y (c) regionaliza por bioma. Detalle
+    top 1% de severidad, (b) produce ~1% de positivos en el subset, un imbalance manejable con
+    <code>scale_pos_weight</code> en XGBoost, y (c) regionaliza por bioma. Detalle
     completo en
     <a href="docs/megafire_labeling_pipeline.html#estrategia">megafire_labeling_pipeline.html §5</a>.
   </p>
 
   <p>
     El output <code>data/processed/megafire_thresholds.md</code> contiene la tabla completa por
-    región. Los thresholds del subset 2016-2017 varían entre Magallanes (55.9 ha) y O'Higgins
-    (4.009 ha) — un rango 72× que captura la heterogeneidad ecológica más el efecto del
-    megaincendio de 2017 sobre las cifras regionales centrales.
+    región. En el subset 2012-2018 de tres regiones, los P99 son Biobío 89.2 ha,
+    Maule 204.0 ha y Araucanía 250.3 ha.
   </p>
 
   <div class="callout callout-warning">
@@ -996,12 +992,12 @@
   </p>
 
   <p>
-    <strong>Class imbalance</strong>: con label L1b sobre el subset, ~129 positivos / 12.332
-    filtrados = ~1.05%. Con L2 se espera imbalance similar o más fuerte (~0.2-0.6% según
-    sensibilidad MODIS). Mitigación:
+    <strong>Class imbalance</strong>: con L1b sobre 29.510 eventos, el proxy queda cercano a
+    1% de positivos por construcción. Con L2 se debe usar el conteo real de
+    <code>label_l2</code> del parquet 2012-2018. Mitigación:
   </p>
   <ul>
-    <li><code>scale_pos_weight = n_neg / n_pos ≈ 95</code> como baseline.</li>
+    <li><code>scale_pos_weight = n_neg / n_pos</code> como baseline.</li>
     <li>Alternativa: focal loss (custom objective) si los positivos resultan heterogéneos.</li>
     <li><strong>No usar SMOTE</strong>: sintetizar megaincendios artificiales viola la naturaleza
         espacio-temporal del problema.</li>
@@ -1025,19 +1021,17 @@
 
   <h3>5.5 Validación: train/test split</h3>
   <p>
-    <strong>No usar split aleatorio</strong> sobre 2016-2017: los megaincendios están concentrados
-    en enero-febrero 2017 y un split aleatorio mezclaría observaciones fuertemente correlacionadas
-    temporal y espacialmente.
+    <strong>No usar split aleatorio</strong> como evaluación principal: los incendios tienen
+    correlación temporal y espacial, y el evento de enero-febrero 2017 puede contaminar train/test
+    si se reparte aleatoriamente.
   </p>
 
   <ul>
-    <li><strong>Split temporal intra-subset</strong>: train 2016 (7.475 eventos, mayormente
-        régimen normal), test 2017 (4.906 eventos, incluye el evento catastrófico). Pone a prueba
-        la capacidad del modelo de predecir el régimen extremo a partir del régimen normal.</li>
-    <li><strong>Cross-validation espacial</strong>: leave-one-region-out CV para evaluar
-        generalización a regiones no vistas — crítico para política pública.</li>
-    <li><strong>Roadmap</strong>: una vez ampliado el enriched a 2002-2020, protocolo objetivo
-        train 2002-2017 / test 2018-2020.</li>
+    <li><strong>Split temporal</strong>: entrenar con 2012-2017 y testear en 2018.</li>
+    <li><strong>Cross-validation espacial</strong>: leave-one-region-out entre Maule, Biobío
+        y Araucanía para evaluar generalización regional.</li>
+    <li><strong>Validación de estrés</strong>: revisar desempeño específico en enero-febrero 2017,
+        donde se concentran eventos extremos como Las Máquinas.</li>
   </ul>
 </section>
 
@@ -1060,7 +1054,7 @@
 │   └── utils.py             (34)     # helpers
 │
 ├── scripts/                          # entry points + utilidades (1.213 LOC, 6 archivos)
-│   ├── preprocess.py            (75) # CLI entry (typer) — `python scripts/preprocess.py --years 2016-2017`
+│   ├── preprocess.py            (75) # CLI entry (typer) — `python scripts/preprocess.py --years 2012-2018`
 │   ├── megafire_thresholds.py  (170) # P95/P98/P99/lognorm/Pareto-80, genera megafire_thresholds.md
 │   ├── monitor.py              (725) # dashboard FastAPI puerto 8877
 │   ├── patch_evavt.py           (79) # repara evavt en NetCDF existentes
@@ -1068,7 +1062,7 @@
 │   └── download_era5_conaf_days.py (45) # descarga ERA5 día-a-día (uso puntual)
 │
 ├── eda/
-│   ├── 01_eda_conaf.ipynb            # EDA exploratorio CONAF 2002-2020 (plotly + folium)
+│   ├── 01_conaf_eda.ipynb            # EDA exploratorio CONAF 2002-2020 (plotly + folium)
 │   └── Propuestas.md                 # justificación variables ERA5 (refs Zakari/Liao)
 │
 ├── modeling/
@@ -1083,8 +1077,8 @@
 │   │   └── era5/                     # 132 NetCDF mensuales (jul 2002 - jun 2020)
 │   ├── interim/                      # CONAF clean (post-mover: vacío hasta re-ejecutar loader)
 │   ├── processed/
-│   │   ├── conaf_enriched_latest.parquet            # 12.381 × 66 (subset 2016-2017)
-│   │   ├── conaf_enriched_2016_2017.parquet         # alias
+│   │   ├── conaf_enriched_latest.parquet            # latest run enriquecido
+│   │   ├── conaf_enriched_2012_2018.parquet         # run base del estudio actual
 │   │   ├── megafire_thresholds.md                   # tabla umbrales por región
 │   │   ├── features_report.md  / .json              # profiling
 │   │   └── *.attribution.json                       # metadatos por output
@@ -1148,7 +1142,7 @@
       <tr>
         <td>Enrichment (spatial-temporal join)</td>
         <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/enrichment.py</code> → 12.381 × 66 (2016-2017)</td>
+        <td><code>src/enrichment.py</code> → parquet enriched + columnas ERA5/MODIS según run</td>
       </tr>
       <tr>
         <td>Profiling automático</td>
@@ -1163,7 +1157,7 @@
       <tr>
         <td>EDA exploratorio</td>
         <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>eda/01_eda_conaf.ipynb</code> (CONAF 2002-2020 completo)</td>
+        <td><code>eda/01_conaf_eda.ipynb</code> (CONAF 2002-2020 completo)</td>
       </tr>
       <tr>
         <td>Documentación pipeline de etiquetado</td>
@@ -1182,23 +1176,23 @@
       </tr>
       <tr>
         <td><strong>Pipeline L2</strong> (MODIS-FRP → FLI ≥ 10.000 kW/m)</td>
-        <td><span class="badge badge-progress">⏳ Prioridad alta</span></td>
-        <td>Target objetivo del proyecto. Requiere autenticación Google Earth Engine + query MOD14/MYD14 + conversión Wooster 2003. Snippet de referencia en <a href="docs/megafire_labeling_pipeline.html#pipeline">labeling_pipeline.html §6</a></td>
+        <td><span class="badge badge-done">✓ Done</span></td>
+        <td>Implementado con NASA FIRMS Area API en <code>src/modis.py</code>; requiere <code>FIRMS_MAP_KEY</code>.</td>
       </tr>
       <tr>
-        <td><code>scripts/build_labels.py</code> productivo (genera L1b + L2)</td>
+        <td>Entry point opcional para L1b/sensitivity</td>
         <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Pipeline L1b ya descrito en HTML; L2 depende del pipeline MODIS</td>
+        <td>Opcional: el ETL principal ya genera L2; queda pendiente si se quiere un entrypoint dedicado para sensitivity analysis L1b.</td>
       </tr>
       <tr>
         <td>Entrenamiento XGBoost — <strong>modelo L1b</strong> (proxy/sensitivity)</td>
         <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Permite validar pipeline end-to-end sin esperar L2</td>
+        <td>Modelo secundario para sensitivity analysis frente a L2</td>
       </tr>
       <tr>
         <td>Entrenamiento XGBoost — <strong>modelo L2</strong> (target principal)</td>
         <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Depende del pipeline L2; es el resultado central del paper</td>
+        <td>Usa <code>label_l2</code> generado por el ETL; es el resultado central del paper</td>
       </tr>
       <tr>
         <td>SHAP analysis comparativo L1b vs L2</td>
@@ -1225,11 +1219,10 @@
 
   <div class="callout callout-info">
     <span class="callout-title">Lectura del estado</span>
-    Toda la infraestructura de datos está construida y validada. Las dos líneas de trabajo
-    activas son: (i) <strong>implementar el pipeline L2</strong> MODIS-FRP → FLI (target objetivo
-    del paper, prioridad alta); (ii) <strong>entrenar el baseline XGBoost con L1b</strong> en
-    paralelo para validar el pipeline de modelado y producir el primer análisis SHAP. La
-    expansión temporal a 2002-2020 y el cross-validation regional son paralelizables.
+    La infraestructura principal está construida. Las líneas activas son: (i) verificar el run
+    2012-2018 con L2 y métricas MODIS reales; (ii) entrenar XGBoost-L2 como modelo principal;
+    (iii) usar L1b solo como sensitivity analysis. El cross-validation regional es parte del
+    protocolo de evaluación.
   </div>
 </section>
 
@@ -1241,15 +1234,14 @@
   <ul>
     <li><strong>Python 3.12</strong> (recomendado). Fedora/RHEL: <code>dnf install python3.12</code>.
         macOS: <code>brew install python@3.12</code>.</li>
-    <li><strong>RAM</strong>: ≥ 8 GB para procesar enrichment 2016-2017; ≥ 16 GB para
-        re-ejecutar enrichment full 2002-2020 (132 NetCDF abiertos vía xarray con dask).</li>
-    <li><strong>Espacio en disco</strong>: ~3 GB para CONAF raw + ~25 GB para ERA5 raw completo
-        (sólo 2016-2017: ~3 GB).</li>
+    <li><strong>RAM</strong>: ≥ 16 GB recomendado para procesar enrichment 2012-2018.</li>
+    <li><strong>Espacio en disco</strong>: ~3 GB para CONAF raw + varios GB adicionales para ERA5
+        mensual del rango 2012-2018.</li>
     <li><strong>Tiempo estimado</strong>:
       <ul>
         <li>Setup + descarga CONAF: ~10 min (depende de ancho de banda).</li>
         <li>Descarga ERA5 (1 año, 12 NetCDF): ~30-60 min (queue CDS).</li>
-        <li>Enrichment 2016-2017 (12.381 eventos): ~3-5 min.</li>
+        <li>Enrichment 2012-2018: depende del cache ERA5 y de la cola CDS.</li>
         <li>Profiling: ~30 s.</li>
         <li>Umbrales megaincendio: &lt; 5 s.</li>
       </ul>
@@ -1295,8 +1287,8 @@ source .venv/bin/activate</code></pre>
   <pre><code># Smoke test sobre 2002 (rápido, no descarga ERA5 si ya está cacheado)
 python scripts/preprocess.py --years 2002-2002 --skip-download
 
-# Subset 2016-2017 (lo que produce conaf_enriched_latest.parquet)
-python scripts/preprocess.py --years 2016-2017
+# Run base del estudio actual
+python scripts/preprocess.py --years 2012-2018
 
 # Producción full
 python scripts/preprocess.py --years 2002-2020
@@ -1347,20 +1339,20 @@ make lint    # ruff check sobre src/</code></pre>
     </thead>
     <tbody>
       <tr>
-        <td>Acotar análisis a <strong>2016-2017</strong></td>
-        <td>Cobertura ERA5 enriquecida hoy disponible. Incluye «incendio del siglo», maximiza
-            variabilidad del régimen extremo.</td>
+        <td>Acotar análisis a <strong>2012-2018</strong> y tres regiones</td>
+        <td>Cubre años normales y la temporada 2016-2017, manteniendo foco en Maule, Biobío
+            y Araucanía.</td>
         <td><a href="#datos">§4.5</a></td>
       </tr>
       <tr>
-        <td><strong>P99 regional</strong> como threshold del proxy preliminar L1b</td>
-        <td>Preserva semántica «top 1%», respeta heterogeneidad ecológica, produce imbalance
-            manejable (~1%). Permite entrenar el pipeline sin esperar a tener L2.</td>
+        <td><strong>P99 regional</strong> como threshold del proxy secundario L1b</td>
+        <td>Preserva semántica «top 1%», respeta heterogeneidad ecológica y queda como
+            sensitivity analysis frente al target L2.</td>
         <td><a href="docs/megafire_labeling_pipeline.html#estrategia">labeling_pipeline.html §5</a></td>
       </tr>
       <tr>
-        <td>Excluir regiones con <strong>n &lt; 50</strong> en el subset (Atacama, Arica)</td>
-        <td>P99 con muestra pequeña tiene CI enorme; el modelo aprendería ruido específico.</td>
+        <td>Filtrar a <strong>Maule, Biobío y Araucanía</strong></td>
+        <td>Define el alcance del estudio centro-sur; Ñuble queda dentro de Biobío histórico.</td>
         <td><a href="docs/megafire_labeling_pipeline.html#estrategia">labeling_pipeline.html §5.3</a></td>
       </tr>
       <tr>
@@ -1382,11 +1374,10 @@ make lint    # ruff check sobre src/</code></pre>
         <td><code>src/enrichment.py</code></td>
       </tr>
       <tr>
-        <td><strong>L2 target objetivo + L1b proxy preliminar / sensitivity</strong></td>
+        <td><strong>L2 target objetivo + L1b proxy secundario / sensitivity</strong></td>
         <td>L2 (FLI ≥ 10.000 kW/m, Tedim 2018) es el estándar internacional y el resultado
-            principal del paper. L1b (P99 regional de hectáreas) bootstrappea el pipeline
-            mientras MODIS no está integrado y queda como análisis de sensibilidad
-            metodológico.</td>
+            principal del paper. L1b (P99 regional de hectáreas) queda como análisis de
+            sensibilidad metodológico.</td>
         <td><a href="docs/megafire_labeling_pipeline.html#estrategia">labeling_pipeline.html §5</a></td>
       </tr>
       <tr>
@@ -1428,17 +1419,13 @@ make lint    # ruff check sobre src/</code></pre>
   <h3>Corto plazo (1-2 semanas) — dos líneas paralelas</h3>
   <p><strong>Línea A — implementación de L2 (target objetivo)</strong>:</p>
   <ul>
-    <li>Autenticar Google Earth Engine, prototipar query MOD14A1/MYD14A1 sobre una ventana
-        espacio-temporal alrededor de Las Máquinas para validar feasibility.</li>
-    <li>Implementar el módulo de conversión FRP→FLI (Wooster 2003) en <code>src/</code>.</li>
-    <li>Estimar el frente de fuego desde la geometría del evento (radio del equivalente circular
-        de la superficie quemada) — documentar la limitación de esta aproximación.</li>
+    <li>Verificar <code>FIRMS_MAP_KEY</code> y ejecutar el pipeline 2012-2018 con MODIS activo.</li>
+    <li>Reportar conteos reales de <code>label_l2</code>, FRP válido y matches MODIS.</li>
+    <li>Validar eventos extremos conocidos, incluyendo Las Máquinas, contra el label L2.</li>
   </ul>
-  <p><strong>Línea B — baseline con L1b (proxy + bootstrap del pipeline de modelado)</strong>:</p>
+  <p><strong>Línea B — L1b como sensitivity analysis</strong>:</p>
   <ul>
-    <li>Productivizar etiquetado L1b: implementar <code>scripts/build_labels.py</code> que lee
-        enriched, aplica P99 regional, escribe <code>conaf_labeled.parquet</code> con la
-        columna <code>label_l1b</code>.</li>
+    <li>Productivizar L1b solo si se requiere un artefacto separado de sensitivity analysis.</li>
     <li>Completar y ejecutar <code>modeling/01_xgboost_baseline.ipynb</code> con
         <code>label_l1b</code> como target.</li>
     <li>SHAP analysis preliminar: feature importance global, dependence plots top-5, explicaciones
@@ -1448,8 +1435,7 @@ make lint    # ruff check sobre src/</code></pre>
 
   <h3>Medio plazo (1-2 meses)</h3>
   <ul>
-    <li>Cerrar la línea A: <code>build_labels.py</code> genera también <code>label_l2</code>.
-        Entrenar XGB-L2 como modelo principal del paper.</li>
+    <li>Entrenar XGB-L2 como modelo principal del paper usando el parquet 2012-2018.</li>
     <li><strong>Comparación SHAP L1b vs L2</strong>: matriz de confusión entre labels, análisis
         de discrepancias, ranking de features estable vs específico del label. Esta comparación
         es la contribución metodológica central del paper.</li>
@@ -1594,7 +1580,7 @@ make lint    # ruff check sobre src/</code></pre>
       <tr><td>Visión completa + paper background</td><td><code>README.html</code> (este documento)</td></tr>
       <tr><td>Pipeline detallado de etiquetado</td><td><code>docs/megafire_labeling_pipeline.html</code></td></tr>
       <tr><td>Justificación de variables ERA5 elegidas</td><td><code>eda/Propuestas.md</code></td></tr>
-      <tr><td>Datos exploración CONAF</td><td><code>eda/01_eda_conaf.ipynb</code></td></tr>
+      <tr><td>Datos exploración CONAF</td><td><code>eda/01_conaf_eda.ipynb</code></td></tr>
       <tr><td>Esqueleto del modelo XGBoost</td><td><code>modeling/01_xgboost_baseline.ipynb</code></td></tr>
       <tr><td>Profiling completo del enriched</td><td><code>data/processed/features_report.md</code></td></tr>
       <tr><td>Umbrales megaincendio por región</td><td><code>data/processed/megafire_thresholds.md</code></td></tr>
@@ -1631,10 +1617,9 @@ make lint    # ruff check sobre src/</code></pre>
     <dd>Razón entre presión de vapor real y de saturación (%). Derivada de t2m y d2m.</dd>
     <dt>L1b / L2</dt>
     <dd>Labels del proyecto. <strong>L2 = target objetivo</strong>: FLI ≥ 10.000 kW/m estimado
-        desde MODIS-FRP, alineado con el estándar Tedim 2018. <strong>L1b = proxy preliminar +
-        sensitivity</strong>: P99 regional de <code>superficie_quemada_total_ha</code>. Permite
-        entrenar el pipeline mientras L2 no está implementado y queda como análisis de
-        sensibilidad en el paper.</dd>
+        desde MODIS-FRP, alineado con el estándar Tedim 2018. <strong>L1b = proxy secundario +
+        sensitivity</strong>: P99 regional de <code>superficie_quemada_total_ha</code> para
+        contrastar resultados frente al target físico.</dd>
     <dt>LAI (Leaf Area Index)</dt>
     <dd>Área foliar por unidad de área de suelo. ERA5: <code>lai_hv</code> (alta vegetación),
         <code>lai_lv</code> (baja).</dd>

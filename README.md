@@ -26,7 +26,7 @@ Ver `make help` para todos los targets disponibles.
 │   ├── processed/            # dataset enriquecido
 │   └── runs/                 # estado de ejecuciones
 ├── src/                      # módulos reutilizables
-├── eda/01_eda_conaf.ipynb
+├── eda/01_conaf_eda.ipynb
 └── scripts/
     ├── preprocess.py         # CLI pipeline
     └── monitor.py            # dashboard local
