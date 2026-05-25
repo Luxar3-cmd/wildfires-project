@@ -67,6 +67,7 @@ def main(
 	years: str = typer.Option("2002-2020", "--years", help="Rango YYYY-YYYY"),
 	skip_download: bool = typer.Option(False, "--skip-download", help="Asume ERA5 ya descargado"),
 	download_only: bool = typer.Option(False, "--download-only", help="Solo descarga ERA5; no enriquece ni escribe parquet"),
+	skip_modis: bool = typer.Option(False, "--skip-modis", help="Saltar descarga MODIS y cálculo de label_l2"),
 	refresh_conaf: bool = typer.Option(False, "--refresh-conaf", help="Re-descarga CONAF aunque haya cache"),
 	out: Path | None = typer.Option(None, "--out", help="Ruta parquet opcional para el output versionado"),
 	era5_dir: Path | None = typer.Option(None, "--era5-dir", help="Directorio ERA5 (default: data/raw/era5/)"),
@@ -89,6 +90,7 @@ def main(
 			end_year,
 			skip_download=skip_download,
 			refresh_conaf=refresh_conaf,
+			skip_modis=skip_modis,
 			out_path=out,
 			era5_dir=era5_dir,
 		)
