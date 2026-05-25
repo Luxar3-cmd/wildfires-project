@@ -85,9 +85,15 @@ ITREND_BASE_URL = os.getenv("ITREND_BASE_URL", "https://datospararesiliencia.cl"
 CDSAPI_URL = _env("CDSAPI_URL", "https://cds.climate.copernicus.eu/api")
 CDSAPI_KEY = _env("CDSAPI_KEY")
 
+# NASA FIRMS — MAP_KEY gratuita en https://firms.modaps.eosdis.nasa.gov/api/map_key/
+FIRMS_MAP_KEY = _env("FIRMS_MAP_KEY")
+FIRMS_BASE_URL = _env("FIRMS_BASE_URL", "https://firms.modaps.eosdis.nasa.gov/api/area/csv")
+
+FIRMS_RAW_DIR = DATA_RAW / "firms"
+
 
 def ensure_dirs() -> None:
-	for d in (DATA_RAW, DATA_INTERIM, DATA_PROCESSED, DATA_MODELS, CONAF_RAW_DIR, ERA5_RAW_DIR):
+	for d in (DATA_RAW, DATA_INTERIM, DATA_PROCESSED, DATA_MODELS, CONAF_RAW_DIR, ERA5_RAW_DIR, FIRMS_RAW_DIR):
 		d.mkdir(parents=True, exist_ok=True)
 
 

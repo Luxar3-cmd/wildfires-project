@@ -169,6 +169,11 @@ _ROLE_LOOKUP: dict[str, str] = {
 	"superficie_quemada_total_ha": "candidate_target",
 	"causa": "conaf_feature", "alerta": "conaf_feature",
 	"escenario": "conaf_feature", "duracion_minutos": "conaf_feature",
+	# Label L2 (MODIS-FRP → FLI, Tedim 2018)
+	"modis_n_matches": "modis_match", "modis_frp_max_mw": "modis_feature",
+	"modis_frp_sum_mw": "modis_feature",
+	"fli_estimado_kw_m": "modis_derived",
+	"label_l2": "target",
 }
 
 

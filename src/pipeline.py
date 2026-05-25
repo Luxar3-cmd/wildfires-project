@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import requests
 
 from src.conaf_loader import CONAF_RAW_DIR, load_conaf
 from src.config import CHILE_BBOX, DATA_PROCESSED, ERA5_RAW_DIR
@@ -199,6 +200,7 @@ def run_pipeline(
 	end_year: int,
 	skip_download: bool = False,
 	refresh_conaf: bool = False,
+	skip_modis: bool = False,
 	out_path: Path | None = None,
 	era5_dir: Path | None = None,
 ) -> dict[str, Any]:
@@ -210,6 +212,7 @@ def run_pipeline(
 		"end_year": end_year,
 		"skip_download": skip_download,
 		"refresh_conaf": refresh_conaf,
+		"skip_modis": skip_modis,
 		"out_path": str(versioned_path),
 		"era5_dir": str(_era5_dir),
 	}
@@ -250,6 +253,35 @@ def run_pipeline(
 
 	logger.info("Enriqueciendo CONAF con ERA5")
 	enriched = enrich_conaf_with_era5(conaf, era5_dir=_era5_dir, out_path=versioned_path, save=True, bbox=download_bbox)
+
+	# Label L2 (FLI ≥ 10.000 kW/m vía MODIS-FRP, Tedim 2018). Paso opcional y robusto:
+	# si falta FIRMS_MAP_KEY o falla la descarga, se loguea y el pipeline continúa sin L2.
+	if not skip_modis:
+		try:
+			from src.modis import (
+				download_firms_for_conaf,
+				l2_summary,
+				label_l2,
+				load_firms_csvs,
+				log_l2_summary,
+				match_modis_to_conaf,
+			)
+
+			firms_paths = download_firms_for_conaf(conaf, bbox=download_bbox)
+			modis_df = load_firms_csvs(firms_paths)
+			matches = match_modis_to_conaf(enriched, modis_df)
+			enriched = label_l2(enriched, matches)
+			# Re-escribir el versionado con las columnas L2 antes de copiar a latest / perfilar
+			enriched.to_parquet(versioned_path)
+			modis_summary = l2_summary(enriched)
+			log_l2_summary(modis_summary)
+			summary["modis"] = modis_summary
+		except (RuntimeError, requests.RequestException, OSError) as exc:
+			logger.warning("L2 (MODIS) falló: %s — pipeline continúa sin label_l2", exc)
+			summary["modis"] = {"error": str(exc)}
+	else:
+		logger.info("Skip de MODIS/L2 activo")
+		summary["modis"] = {"skipped": True}
 
 	summary["output"] = _write_outputs(enriched, versioned_path, params)
 	summary["attribution"] = attribution_payload()
