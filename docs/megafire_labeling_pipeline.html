@@ -373,6 +373,13 @@
     a::after { content: " (" attr(href) ")"; font-size: 0.7em; color: #555; }
   }
 </style>
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["$$", "$$"]] },
+      svg: { fontCache: "global" }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" async></script>
 </head>
 <body>
 <div class="container">
@@ -391,6 +398,7 @@
       <li><a href="#problema">El problema del label en CONAF</a></li>
       <li><a href="#estrategia">Estrategia de etiquetado</a></li>
       <li><a href="#pipeline">Pipeline a prueba de tontos</a></li>
+      <li><a href="#implementacion-l2">Implementación L2 (Methods)</a></li>
       <li><a href="#features">Features para XGBoost</a></li>
       <li><a href="#referencias">Referencias</a></li>
     </ol>
@@ -554,6 +562,9 @@
       </ul>
       <strong>Limitación</strong>: fuegos &lt;~50 ha no son detectados consistentemente
       (sub-pixel mixing), y la cobertura se interrumpe con nubosidad.
+      <strong>Para estimar FLI se usa el swath L2</strong> (<code>MOD14</code>/<code>MYD14</code>),
+      no el composite diario: la conversión de Wooster 2003 necesita el FRP instantáneo
+      de cada detección, que los composites A1/A2 promedian (ver Sección 7).
     </dd>
 
     <dt>PyroCb — Pyrocumulonimbus</dt>
@@ -952,9 +963,11 @@
   </div>
 
   <p>
-    <strong>Estado actual</strong>: L2 <em>no está implementado</em>. Requiere autenticación
-    Google Earth Engine + query MODIS MOD14A1/MYD14A1 + conversión FRP→FLI (Wooster 2003).
-    Es prioridad alta del roadmap.
+    <strong>Estado actual</strong>: L2 <em>implementado</em> en <code>src/modis.py</code>. La
+    propuesta original (Google Earth Engine + MOD14A1/MYD14A1) se reemplazó por la
+    <strong>NASA FIRMS Area API</strong> (dataset <code>MODIS_SP</code>, swath L2 MOD14/MYD14),
+    significativamente más simple: HTTP directo con <code>MAP_KEY</code> gratuita, sin SDK pesado.
+    La especificación completa lista para paper está en la <a href="#implementacion-l2">Sección 7</a>.
   </p>
 
   <h3>5.2 Label L1b — Hectáreas P99 regional (proxy preliminar + sensitivity analysis)</h3>
@@ -1176,6 +1189,12 @@ print(f"Positivos L1b: {df['label_l1b'].sum():,} ({df['label_l1b'].mean()*100:.2
 </code></pre>
 
   <h3>6.5 Paso 4 — Label L2 (MODIS-FRP → FLI)</h3>
+  <div class="callout callout-info">
+    <span class="callout-title">Propuesta original (GEE) — superada</span>
+    Esta sección documenta el enfoque inicial vía Google Earth Engine y se conserva como
+    referencia. La <strong>implementación final usa NASA FIRMS</strong> (HTTP + MAP_KEY, sin GEE);
+    su especificación formal está en la <a href="#implementacion-l2">Sección 7 (Methods)</a>.
+  </div>
   <p>
     Pipeline más complejo. Se ejecuta solo sobre fuegos candidatos
     (<code>superficie_quemada_total_ha &gt; 50</code>) para optimizar consultas a Earth Engine,
@@ -1310,9 +1329,171 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
 </code></pre>
 </section>
 
-<!-- =================== SECCIÓN 7 =================== -->
+<!-- =================== SECCIÓN 7 — IMPLEMENTACIÓN L2 (METHODS) =================== -->
+<section id="implementacion-l2">
+  <h2>7. Implementación L2 — Methods section (paper-ready) <a class="heading-anchor" href="#implementacion-l2">#</a></h2>
+
+  <p>
+    Esta sección documenta la implementación final del label L2 (módulo <code>src/modis.py</code>),
+    redactada como <em>Methods section</em> lista para el paper. Define el producto satelital, la
+    conversión física FRP→FLI, el matching espacio-temporal con los eventos CONAF, la regla de
+    decisión del label, sus parámetros, limitaciones y referencias.
+  </p>
+
+  <h3>7.1 Datos</h3>
+  <p>
+    <strong>Producto MODIS específico</strong>: MODIS Thermal Anomalies/Fire
+    <strong>Level 2 5-Min Swath 1 km</strong> — productos <strong>MOD14</strong> (Terra) y
+    <strong>MYD14</strong> (Aqua), Collection 6.1. <em>No</em> se usan los composites diarios L3
+    (MOD14A1/MYD14A1) ni los de 8 días (MOD14A2/MYD14A2): el swath L2 preserva el FRP instantáneo
+    de cada detección individual, insumo directo de la ecuación de Wooster (2003). Los composites
+    agregan o promedian la potencia radiativa y pierden el pico que define la intensidad EWE.
+  </p>
+  <p>
+    <strong>Acceso</strong>: NASA FIRMS Area API (HTTP, <code>MAP_KEY</code> gratuita), dataset
+    <code>MODIS_SP</code> (Standard Processing). FIRMS extrae los fire pixels del swath L2 y los
+    expone como CSV con columnas <code>latitude, longitude, frp, acq_date, acq_time, satellite,
+    instrument, confidence, daynight, brightness, bright_t31, scan, track</code>. Esto evita la
+    manipulación de archivos HDF crudos desde LAADS DAAC.
+  </p>
+  <p><strong>Sensores y cobertura</strong>:</p>
+  <ul>
+    <li>Terra: paso aproximado 10:30 LST (órbita descendente).</li>
+    <li>Aqua: paso aproximado 13:30 LST (órbita ascendente).</li>
+    <li>Combinado: típicamente 2–4 observaciones/día/punto en latitudes medias.</li>
+    <li>Resolución espacial: 1 km en nadir; degrada a ~10 km en los bordes del swath.</li>
+    <li>Cobertura temporal de <code>MODIS_SP</code>: 2002–presente, con lag de varios meses
+        respecto al near-real-time.</li>
+  </ul>
+  <div class="callout callout-warning">
+    <span class="callout-title">Limitación documentada (Giglio et al. 2016)</span>
+    El algoritmo de detección sub-reporta fuegos &lt; ~50 ha por dilución térmica en píxeles de
+    1 km²; la cobertura es intermitente por nubosidad, alto ángulo cenital solar o saturación del
+    detector en fuegos muy intensos.
+  </div>
+
+  <h3>7.2 Conversión FRP → FLI (interpretación <em>peak local</em>)</h3>
+  <p>
+    Ecuación de Wooster (2003) aplicada al <strong>píxel MODIS más caliente</strong> del frente.
+    Para el evento \(i\):
+  </p>
+  <p>$$\text{FLI}_i\;[\text{kW m}^{-1}] = \frac{\text{FRP}_i \cdot 10^{3} / \eta_r}{L_{\text{px}}}$$</p>
+  <p>
+    donde \(\text{FRP}_i = \max_{j \in \mathcal{M}_i} \text{FRP}_j\) es la potencia radiativa
+    máxima (MW) entre las detecciones MODIS matcheadas al evento \(i\), \(\eta_r = 0.17\) es la
+    fracción radiante por defecto (Wooster 2003; rango 0.13–0.20) y \(L_{\text{px}} = 1000\) m es
+    la longitud nominal del píxel MODIS en nadir.
+  </p>
+  <div class="callout callout-warning">
+    <span class="callout-title">Por qué <em>peak local</em> y no front length desde el área CONAF</span>
+    La superficie quemada CONAF (<code>superficie_quemada_total_ha</code>) es el <strong>área
+    acumulada final</strong> del incendio (días o semanas), mientras que el FRP es una medida
+    <strong>instantánea</strong> de un pase satelital. Derivar el largo del frente de un área
+    circular equivalente daría frentes de 10–45 km en megaincendios y, al repartir el FRP de un
+    único píxel sobre esa longitud, diluiría la FLI hasta hacer \(\text{label\_l2}=0\) incluso para
+    eventos categóricamente EWE (p. ej. Las Máquinas, 159.812 ha, requeriría
+    \(\text{FRP}\approx 77\) GW en un píxel para superar el umbral). La interpretación
+    <em>peak local</em> es dimensionalmente coherente —un píxel de 1 km² ↔ su propia longitud— y
+    define \(\text{label\_l2}=1\) cuando <strong>alguna parte del frente</strong> alcanzó
+    intensidad EWE.
+  </div>
+  <div class="callout callout-info">
+    <span class="callout-title">Verificación dimensional</span>
+    \(P_{\text{total}}\,[\text{W}] = \text{FRP}\,[\text{MW}]\cdot 10^{6} / \eta_r\); luego
+    \(\text{FLI}\,[\text{W m}^{-1}] = P_{\text{total}} / L_{\text{px}}\); finalmente
+    \(\text{FLI}\,[\text{kW m}^{-1}] = \text{FLI}\,[\text{W m}^{-1}] / 10^{3}\).
+    Ejemplo: \(\text{FRP}=170\) MW, \(L_{\text{px}}=1000\) m, \(\eta_r=0.17 \Rightarrow
+    \text{FLI}=1000\) kW m⁻¹. El umbral EWE de 10.000 kW m⁻¹ se alcanza en
+    \(\text{FRP} \approx 1700\) MW, de modo que <strong>\(\text{label\_l2}=1 \iff \text{FRP}_i
+    \gtrsim 1700\) MW</strong>.
+  </div>
+
+  <h3>7.3 Matching espacio-temporal CONAF ↔ MODIS</h3>
+  <p>
+    Para cada evento CONAF \(i\) con timestamp \(t_i\) (UTC) y coordenadas
+    \((\phi_i, \lambda_i)\), el conjunto de detecciones MODIS asociadas es:
+  </p>
+  <p>$$\mathcal{M}_i = \{\, j : d_{\text{hav}}(\phi_i, \lambda_i, \phi_j, \lambda_j) \le r_{\max} \;\wedge\; |t_i - t_j| \le \Delta t_{\max} \,\}$$</p>
+  <p>
+    donde \(d_{\text{hav}}\) es la distancia haversine, \(r_{\max} = 5\) km y
+    \(\Delta t_{\max} = 24\) h. Estos defaults cubren la resolución nominal MODIS (~1 km nadir,
+    hasta ~10 km en bordes) con margen, y la cadencia combinada Terra+Aqua (2–4 observaciones/día/
+    punto en latitudes medias). La agregación por evento usa
+    \(\text{FRP}_i = \max_{j \in \mathcal{M}_i} \text{FRP}_j\), defendible porque Wooster (2003)
+    vincula la FLI con la intensidad radiativa instantánea del frente.
+  </p>
+
+  <h3>7.4 Definición operacional del label L2</h3>
+  <p>$$\text{label\_l2}_i = \mathbb{1}\!\left[\,\text{FLI}_i \ge \text{FLI}_{\text{EWE}} \;\wedge\; A_i \ge A_{\min}\,\right], \qquad \text{FLI}_{\text{EWE}} = 10\,000\ \text{kW m}^{-1},\; A_{\min} = 50\ \text{ha}$$</p>
+  <p>
+    Los eventos sin match MODIS (\(\mathcal{M}_i = \varnothing\)) reciben \(\text{FRP}_i = \text{NaN}
+    \Rightarrow \text{FLI}_i = \text{NaN} \Rightarrow \text{label} = 0\). Interpretación: la
+    ausencia de detección satelital del píxel térmico es evidencia (débil pero válida) de que el
+    frente no superó los umbrales radiativos asociados a EWE. El umbral 10.000 kW m⁻¹ corresponde
+    a Tedim et al. (2018) categoría 5 (límite inferior EWE; Tabla 3 del paper original, reproducida
+    en la <a href="#tedim">Sección 3</a>).
+  </p>
+  <div class="callout callout-info">
+    <span class="callout-title">Guardia de coherencia área–FLI (\(A_{\min}\))</span>
+    El segundo término exige una superficie quemada mínima de 50 ha (el límite de detección de
+    MODIS). Sin esta guardia, el radio de matching de 5 km puede atribuir el FRP de un megaincendio
+    vecino a un evento CONAF pequeño y producir falsos positivos físicamente incoherentes
+    (un EWE no ocupa &lt; 50 ha). En la validación 2016-2017, la guardia descartó 2 de 9 positivos
+    candidatos (eventos de 0,01 y 0,24 ha en Biobío, vecinos de los megaincendios del 26-ene-2017),
+    dejando 7 EWE coherentes.
+  </div>
+
+  <h3>7.5 Tabla de parámetros</h3>
+  <table>
+    <thead>
+      <tr><th>Parámetro</th><th>Símbolo</th><th>Valor</th><th>Fuente / justificación</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Radio matching espacial</td><td>\(r_{\max}\)</td><td class="num">5 km</td><td>Resolución MODIS (1 km nadir) + margen off-nadir</td></tr>
+      <tr><td>Ventana matching temporal</td><td>\(\Delta t_{\max}\)</td><td class="num">24 h</td><td>Cobertura combinada Terra+Aqua, robusta a nubosidad parcial</td></tr>
+      <tr><td>Fracción radiante</td><td>\(\eta_r\)</td><td class="num">0.17</td><td>Wooster (2003) default; rango 0.13–0.20</td></tr>
+      <tr><td>Longitud del píxel (front length)</td><td>\(L_{\text{px}}\)</td><td class="num">1000 m</td><td>Tamaño píxel MODIS nadir (interpretación peak local)</td></tr>
+      <tr><td>Umbral EWE</td><td>\(\text{FLI}_{\text{EWE}}\)</td><td class="num">10.000 kW m⁻¹</td><td>Tedim et al. (2018) categoría 5+</td></tr>
+      <tr><td>Superficie mínima (guardia)</td><td>\(A_{\min}\)</td><td class="num">50 ha</td><td>Límite detección MODIS; descarta falsos positivos por atribución espacial</td></tr>
+      <tr><td>Dataset MODIS</td><td>—</td><td class="num">MODIS_SP C6.1</td><td>Standard Processing, calibración consistente</td></tr>
+      <tr><td>Bbox descarga</td><td>CHILE_BBOX</td><td class="num">74°W, 42°S, 70°W, 34°S</td><td>4 regiones del subset enriquecido</td></tr>
+    </tbody>
+  </table>
+
+  <h3>7.6 Limitaciones reconocidas</h3>
+  <ol>
+    <li><strong>Subestimación por nubosidad o pase fuera de ventana</strong>: si Terra y Aqua no
+        observan el evento en su fase activa, <code>label_l2 = 0</code> (falso negativo posible).</li>
+    <li><strong>FLI puntual, no integrada sobre el frente</strong>: la interpretación peak local
+        mide la intensidad del píxel más caliente, no la del frente completo. Marca correctamente
+        si <em>alguna parte</em> del frente alcanzó intensidad EWE, pero no cuantifica su extensión;
+        un frente largo de intensidad moderada uniforme podría no detectarse como EWE.</li>
+    <li><strong>\(\eta_r\) constante</strong>: la vegetación heterogénea (matorral vs bosque vs
+        pastizal) modula la fracción radiante real entre 0.13 y 0.20; sensibilidad explorable en
+        análisis posterior.</li>
+    <li><strong>Resolución MODIS limita la atribución</strong>: hotspots de fuegos cercanos
+        pueden atribuirse a un evento CONAF distinto dentro del radio de 5 km. La guardia de
+        coherencia área–FLI (\(A_{\min} = 50\) ha, §7.4) mitiga el caso más severo —FRP de un
+        megaincendio vecino asignado a un fuego pequeño— pero no elimina la ambigüedad entre dos
+        fuegos grandes y próximos.</li>
+    <li><strong>Cobertura temporal sesgada</strong>: el subset usa Terra+Aqua exclusivamente; los
+        sensores geoestacionarios (GOES-16/17) capturarían la dinámica intra-día, pero quedan
+        fuera de alcance.</li>
+  </ol>
+
+  <h3>7.7 Referencias</h3>
+  <p>
+    Referencias clave ya listadas en la <a href="#referencias">Sección de Referencias</a>:
+    Wooster et al. (2003) [6] — conversión FRP↔FLI; Tedim et al. (2018) [1] — definición y umbral
+    EWE; NASA LP DAAC MOD14/MYD14 [8] — producto satelital. Referencias adicionales propias de
+    esta sección: Giglio et al. (2016) [15] — algoritmo de detección Collection 6 y sus
+    limitaciones; Kaufman et al. (1998) [16] — fundamentos del fire monitoring con MODIS y del FRP.
+  </p>
+</section>
+
+<!-- =================== SECCIÓN 8 =================== -->
 <section id="features">
-  <h2>7. Features para XGBoost (sin leakage) <a class="heading-anchor" href="#features">#</a></h2>
+  <h2>8. Features para XGBoost (sin leakage) <a class="heading-anchor" href="#features">#</a></h2>
 
   <p>
     El modelo predice en el momento de ignición, por lo que solo puede usar variables
@@ -1403,7 +1584,7 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
     </div>
   </div>
 
-  <h3>7.1 Class imbalance</h3>
+  <h3>8.1 Class imbalance</h3>
   <p>
     Con label L1b a P99 regional sobre el subset 2016-2017: <strong>129 positivos
     (~1.05%)</strong> sobre 12.332 filas filtradas. Con label L2 (MODIS): probablemente
@@ -1438,7 +1619,7 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
         falsos positivos?»</li>
   </ul>
 
-  <h3>7.2 Train/test split</h3>
+  <h3>8.2 Train/test split</h3>
   <p>
     <strong>No usar split aleatorio</strong> sobre el subset 2016-2017: los megaincendios
     están concentrados en enero-febrero 2017. Un split aleatorio mezclaría observaciones
@@ -1460,7 +1641,7 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
 
 <!-- =================== SECCIÓN 8 =================== -->
 <section id="referencias">
-  <h2>8. Referencias <a class="heading-anchor" href="#referencias">#</a></h2>
+  <h2>9. Referencias <a class="heading-anchor" href="#referencias">#</a></h2>
 
   <ol class="references">
     <li>
@@ -1565,6 +1746,22 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
       <em>Environmental Reviews</em>, 28(4), 478–505.<br>
       DOI: <a href="https://doi.org/10.1139/er-2020-0019">10.1139/er-2020-0019</a><br>
       <span class="small">Estado del arte ML en ciencia del fuego, incluye análisis de XGBoost.</span>
+    </li>
+    <li>
+      <span class="ref-num">[15]</span>
+      <strong>Giglio, L., Schroeder, W., &amp; Justice, C. O. (2016)</strong>.
+      <em>The Collection 6 MODIS active fire detection algorithm and fire products.</em>
+      <em>Remote Sensing of Environment</em>, 178, 31–41.<br>
+      DOI: <a href="https://doi.org/10.1016/j.rse.2016.02.054">10.1016/j.rse.2016.02.054</a><br>
+      <span class="small">Algoritmo de detección C6 y limitaciones (sub-reporte de fuegos pequeños).</span>
+    </li>
+    <li>
+      <span class="ref-num">[16]</span>
+      <strong>Kaufman, Y. J., Justice, C. O., Flynn, L. P., et al. (1998)</strong>.
+      <em>Potential global fire monitoring from EOS-MODIS.</em>
+      <em>Journal of Geophysical Research</em>, 103(D24), 32215–32238.<br>
+      DOI: <a href="https://doi.org/10.1029/98JD01644">10.1029/98JD01644</a><br>
+      <span class="small">Fundamentos del fire monitoring satelital con MODIS y del FRP.</span>
     </li>
   </ol>
 </section>
