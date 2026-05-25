@@ -10,7 +10,7 @@ Datasets superados que se conservan para trazabilidad. **No usar como entrada de
 
 ## Por qué archivado y no borrado
 
-- Los scripts `scripts/megafire_thresholds.py`, `src/feature_report.py`, `src/conaf_loader.py` y el notebook `eda/01_eda_conaf.ipynb` aún apuntan a `data/interim/conaf_clean.parquet`. Mantener el archivo aquí permite re-ejecutarlos sin perder la referencia histórica.
+- Los scripts `scripts/megafire_thresholds.py`, `src/feature_report.py`, `src/conaf_loader.py` y el notebook `eda/01_conaf_eda.ipynb` aún apuntan a `data/interim/conaf_clean.parquet`. Mantener el archivo aquí permite re-ejecutarlos sin perder la referencia histórica.
 - Las cifras de la documentación original (`docs/megafire_labeling_pipeline.html` v1.0 antes de 2026-05-24) se calcularon con estos parquets — preservarlos asegura reproducibilidad de citas.
 
 ## Cómo restaurar uno temporalmente
