@@ -436,13 +436,12 @@
   </p>
 
   <div class="callout callout-info">
-    <span class="callout-title">Target objetivo vs proxy preliminar</span>
+    <span class="callout-title">Target objetivo vs proxy secundario</span>
     El <strong>target objetivo</strong> del proyecto es L2 (FLI ≥ 10.000 kW/m vía MODIS-FRP).
-    Mientras el pipeline MODIS-FRP no esté implementado se usa <strong>L1b</strong> como
-    <em>proxy preliminar</em>: threshold P99 regional sobre <code>superficie_quemada_total_ha</code>.
-    L1b permite (a) entrenar y validar el pipeline de modelado end-to-end, (b) servir como
-    análisis de sensibilidad en el paper. Este documento describe ambos labels en detalle,
-    pero la jerarquía es: L2 = objetivo científico, L1b = bootstrap operacional + sensitivity.
+    El pipeline L2 ya está implementado con NASA FIRMS Area API; L1b queda como
+    <em>proxy secundario</em>: threshold P99 regional sobre <code>superficie_quemada_total_ha</code>.
+    Este documento describe ambos labels, pero la jerarquía es: L2 = objetivo científico,
+    L1b = sensitivity analysis.
   </div>
 
   <p>El modelo objetivo es <strong>XGBoost</strong>, con dos casos de uso:</p>
@@ -470,12 +469,11 @@
 
   <div class="callout callout-info">
     <span class="callout-title">Alcance del análisis</span>
-    Este documento describe el pipeline sobre el <strong>subset enriquecido con ERA5</strong>:
-    <code>data/processed/conaf_enriched_latest.parquet</code> — <strong>12.381 eventos</strong>
-    de las temporadas <strong>2016-2017</strong> (incluye el «incendio del siglo»), distribuidos
-    en 13 regiones con cobertura ERA5 dentro del bounding box trabajado. El subset acota la
-    ventana temporal a los años donde existe match espacio-temporal CONAF ↔ ERA5; ampliar a
-    otros años queda como trabajo futuro.
+    Este documento describe el pipeline sobre la corrida base <strong>2012-2018</strong>
+    (<code>data/processed/conaf_enriched_2012_2018.parquet</code> / latest) y el subset
+    analítico de tres regiones CONAF históricas: <strong>Maule</strong>, <strong>Biobío</strong>
+    y <strong>Araucanía</strong>. En este período, <strong>Ñuble</strong> no aparece separado
+    en CONAF y se trata como parte de Biobío histórico.
   </div>
 
   <h3>Por qué clasificación binaria y no regresión</h3>
@@ -789,16 +787,14 @@
 <section id="problema">
   <h2>4. El problema del label en CONAF <a class="heading-anchor" href="#problema">#</a></h2>
 
-  <h3>4.1 Caracterización del dataset CONAF (subset 2016-2017)</h3>
+  <h3>4.1 Caracterización del dataset CONAF (2012-2018; subset Maule–Biobío–Araucanía)</h3>
   <p>
-    El archivo procesado <code>data/processed/conaf_enriched_latest.parquet</code> contiene
-    <strong>12.381 eventos</strong> de incendios forestales en Chile durante las temporadas
-    <strong>2016-2017</strong> (7.475 en 2016 + 4.906 en 2017), georreferenciados y con
-    <strong>66 columnas</strong>: <strong>27</strong> originales CONAF (las 28 del ETL
-    menos <code>geometry</code>, redundante con <code>latitud</code>/<code>longitud</code>)
-    + <strong>36</strong> variables ERA5-Land (17 crudas, 11 derivadas, 8 invariantes
-    estáticas del grid) + <strong>3</strong> metadatos del matching espacio-temporal
-    (<code>era5_dist_km</code>, <code>era5_dt_hours</code>, <code>era5_match_quality</code>).
+    La base CONAF 2012-2018 contiene <strong>42.963 eventos</strong>. El subset analítico
+    usado para modelado concentra <strong>29.510 eventos</strong> en Maule, Biobío y Araucanía.
+    El parquet enriquecido con L2 debe quedar con <strong>70 columnas</strong>: 27 CONAF,
+    19 ERA5 crudas, 11 derivadas, 6 invariantes, 3 metadatos ERA5 y 4 columnas MODIS/L2
+    (<code>modis_n_matches</code>, <code>modis_frp_max_mw</code>,
+    <code>fli_estimado_kw_m</code>, <code>label_l2</code>).
   </p>
 
   <table>
@@ -809,16 +805,16 @@
       </tr>
     </thead>
     <tbody>
-      <tr><td>N total</td><td class="num">12.381</td></tr>
-      <tr><td>N con superficie &gt; 0</td><td class="num">12.376</td></tr>
-      <tr><td>Mediana</td><td class="num">0.45</td></tr>
-      <tr><td>P75</td><td class="num">2.0</td></tr>
-      <tr><td>P90</td><td class="num">8.6</td></tr>
-      <tr><td>P95</td><td class="num">26.2</td></tr>
-      <tr><td>P98</td><td class="num">105.0</td></tr>
-      <tr><td>P99</td><td class="num">340.0</td></tr>
+      <tr><td>N total subset</td><td class="num">29.510</td></tr>
+      <tr><td>N con superficie &gt; 0</td><td class="num">29.501</td></tr>
+      <tr><td>Mediana</td><td class="num">0.30</td></tr>
+      <tr><td>P75</td><td class="num">1.5</td></tr>
+      <tr><td>P90</td><td class="num">5.5</td></tr>
+      <tr><td>P95</td><td class="num">15.4</td></tr>
+      <tr><td>P98</td><td class="num">60.0</td></tr>
+      <tr><td>P99</td><td class="num">148.3</td></tr>
       <tr><td>Máximo</td><td class="num">159.813</td></tr>
-      <tr><td>Suma total</td><td class="num">616.144 ha</td></tr>
+      <tr><td>Suma total</td><td class="num">625.098 ha</td></tr>
     </tbody>
   </table>
 
@@ -826,9 +822,9 @@
     La distribución es marcadamente <strong>power-law</strong>: la mayoría de eventos son
     pequeños (mediana 0.45 ha), pero una cola larga incluye fuegos catastróficos como
     <strong>Las Máquinas</strong> (enero 2017, Maule) que aporta el máximo de ~160.000 ha.
-    El subset 2016-2017 acumula 616.144 ha quemadas — una concentración inusualmente alta
-    producto de la temporada del <em>«incendio del siglo»</em>. Esto sesga al alza los
-    percentiles regionales de Maule, O'Higgins y Metropolitana respecto a un año típico.
+    El período 2012-2018 incluye años normales y la temporada catastrófica 2016-2017; por eso
+    permite analizar el régimen centro-sur sin que el documento dependa exclusivamente del
+    «incendio del siglo».
   </p>
 
   <h3>4.2 Por qué no se puede aplicar Tedim directo</h3>
@@ -863,12 +859,10 @@
 
   <div class="callout callout-warning">
     <span class="callout-title">Caveat sobre el reporte de umbrales</span>
-    El script <code>scripts/megafire_thresholds.py</code> se ejecutó sobre el dataset CONAF
-    2002-2020 original (ahora en <code>data/archive/conaf_clean.parquet</code>). Los números
-    citados de aquí en adelante corresponden al <strong>recálculo manual sobre el subset
-    2016-2017</strong> (<code>conaf_enriched_latest.parquet</code>). Re-apuntar el script al
-    nuevo dataset queda como follow-up: implica regenerar el markdown y refrescar las
-    cifras de log-normal y Pareto-80% sobre la ventana acotada.
+    Los números de esta sección corresponden al recálculo sobre CONAF 2012-2018 filtrado a
+    Maule, Biobío y Araucanía. Cuando el parquet enriquecido 2012-2018 quede como
+    <code>conaf_enriched_latest.parquet</code>, el script debe re-ejecutarse para regenerar
+    <code>data/processed/megafire_thresholds.md</code> con la misma ventana.
   </div>
 
   <h3>4.4 P99 regional — resultados</h3>
@@ -887,37 +881,23 @@
       </tr>
     </thead>
     <tbody>
-      <tr><td><strong>GLOBAL</strong></td><td class="num">12.381</td><td class="num">340.0</td><td>Referencia general</td></tr>
-      <tr><td>Biobío</td><td class="num">4.555</td><td class="num">124.8</td><td>—</td></tr>
-      <tr><td>Araucanía</td><td class="num">2.220</td><td class="num">114.2</td><td>—</td></tr>
-      <tr><td>Valparaíso</td><td class="num">1.857</td><td class="num">298.9</td><td>—</td></tr>
-      <tr><td>Maule</td><td class="num">1.411</td><td class="num">640.2</td><td>Incluye Las Máquinas (2017)</td></tr>
-      <tr><td>Metropolitana</td><td class="num">776</td><td class="num">1.419.1</td><td>Sesgo por 2017</td></tr>
-      <tr><td>O'Higgins</td><td class="num">478</td><td class="num">4.009.6</td><td>Temporada catastrófica 2017</td></tr>
-      <tr><td>Los Lagos</td><td class="num">449</td><td class="num">56.2</td><td>—</td></tr>
-      <tr><td>Los Ríos</td><td class="num">258</td><td class="num">61.5</td><td>—</td></tr>
-      <tr><td>Coquimbo</td><td class="num">218</td><td class="num">80.2</td><td>—</td></tr>
-      <tr><td>Aysén</td><td class="num">58</td><td class="num">1.545.7</td><td>Régimen patagónico</td></tr>
-      <tr><td>Magallanes</td><td class="num">52</td><td class="num">55.9</td><td>—</td></tr>
-      <tr style="background:#fef2f2;"><td>Atacama</td><td class="num">44</td><td class="num">23.2</td><td><strong>Excluida</strong> (n &lt; 50)</td></tr>
-      <tr style="background:#fef2f2;"><td>Arica y Parinacota</td><td class="num">5</td><td class="num">1.9</td><td><strong>Excluida</strong> (n &lt; 50)</td></tr>
+      <tr><td><strong>SUBSET 3 regiones</strong></td><td class="num">29.510</td><td class="num">148.3</td><td>Referencia analítica</td></tr>
+      <tr><td>Araucanía</td><td class="num">7.090</td><td class="num">250.3</td><td>—</td></tr>
+      <tr><td>Biobío</td><td class="num">17.717</td><td class="num">89.2</td><td>Incluye Ñuble histórico</td></tr>
+      <tr><td>Maule</td><td class="num">4.703</td><td class="num">204.0</td><td>Incluye Las Máquinas (2017)</td></tr>
     </tbody>
   </table>
 
   <p class="small" style="margin-top:0.5rem;">
-    <strong>Regiones no presentes en este subset:</strong> Antofagasta, Tarapacá y Ñuble no
-    aparecen porque no tienen cobertura ERA5 dentro del bounding box trabajado o no tuvieron
-    eventos CONAF georreferenciables en 2016-2017. En el dataset CONAF completo (archivado)
-    sí tenían datos, aunque con muestras pequeñas: Antofagasta n=11, Arica n=26, Tarapacá n=10.
+    <strong>Nota sobre Ñuble:</strong> no se trata como cuarta región porque CONAF 2012-2018
+    no la expone separada en la columna <code>region</code>; sus eventos quedan dentro de Biobío.
   </p>
 
   <div class="callout callout-warning">
     <span class="callout-title">Observación</span>
-    P99 varía 72x entre regiones: Magallanes 55.9 ha vs O'Higgins 4.009 ha. La heterogeneidad
-    refleja dos fuentes superpuestas — (a) régimen ecológico (patagónico vs mediterráneo
-    vs nórdico), y (b) el efecto del megaincendio de 2017 sobre las cifras de Maule,
-    O'Higgins y Metropolitana, que en un dataset multi-anual estarían más diluidas.
-    Un umbral global único oculta esta heterogeneidad.
+    P99 varía entre las tres regiones: Biobío 89.2 ha, Maule 204.0 ha y Araucanía 250.3 ha.
+    La heterogeneidad justifica mantener umbrales regionales para L1b, aunque L2 sea el target
+    científico principal.
   </div>
 </section>
 
@@ -929,8 +909,7 @@
     El proyecto adopta <strong>dos labels con roles diferenciados</strong>:
     <strong>L2</strong> (FLI ≥ 10.000 kW/m vía MODIS-FRP) como <em>target objetivo</em>
     alineado con el estándar Tedim et al. 2018, y <strong>L1b</strong> (P99 regional de
-    hectáreas) como <em>proxy preliminar</em> que bootstrappea el pipeline de modelado mientras
-    L2 no está implementado y que sirve como análisis de sensibilidad en el paper. Se entrenan
+    hectáreas) como <em>proxy secundario</em> para análisis de sensibilidad. Se entrenan
     dos modelos XGBoost independientes (uno por label) para comparar sus SHAPs e identificar
     drivers robustos versus específicos del label.
   </p>
@@ -970,35 +949,32 @@
     La especificación completa lista para paper está en la <a href="#implementacion-l2">Sección 7</a>.
   </p>
 
-  <h3>5.2 Label L1b — Hectáreas P99 regional (proxy preliminar + sensitivity analysis)</h3>
+  <h3>5.2 Label L1b — Hectáreas P99 regional (proxy secundario + sensitivity analysis)</h3>
   <p><strong>Definición</strong>: <code>label_l1b = 1</code> si
   <code>superficie_quemada_total_ha ≥ P99_region</code>, sino <code>0</code>.</p>
 
   <p>
-    L1b cumple <strong>dos roles</strong>: (a) bootstrappea el pipeline de modelado XGBoost+SHAP
-    end-to-end mientras se construye L2 (cuando L2 esté listo, solo cambia el target); (b) sirve
-    como análisis de sensibilidad metodológico en el paper — <em>¿qué cambia si el target es un
-    proxy estadístico de superficie en lugar del criterio físico de EWE?</em>
+    L1b cumple un rol secundario: sirve como análisis de sensibilidad metodológico en el paper —
+    <em>¿qué cambia si el target es un proxy estadístico de superficie en lugar del criterio
+    físico de EWE?</em>
   </p>
 
   <div class="callout callout-justification">
     <span class="callout-title">Justificación P99 regional (threshold del proxy)</span>
     <p><strong>Por qué P99 y no P95 o P98:</strong></p>
     <ul>
-      <li>P95 en Biobío = 10.2 ha — eso NO es un megaincendio en ningún sentido operacional.
-          P95 captura «fuego no-trivial», no «catastrófico».</li>
-      <li>P98 a nivel regional produce ~254 positivos (~2%) y P99 produce <strong>129
-          positivos (~1.05%)</strong> en el subset 2016-2017. Ambos preservan la rareza del
-          fenómeno, pero P99 es más restrictivo.</li>
+      <li>P95 en Biobío sigue bajo umbrales operacionales de megaincendio: captura fuego
+          no-trivial, no comportamiento catastrófico.</li>
+      <li>P99 sobre 29.510 eventos produce un proxy cercano al 1% por construcción y preserva
+          la rareza del fenómeno.</li>
       <li>P99 produce ~1% de imbalance — manejable con <code>scale_pos_weight</code> en XGBoost.</li>
       <li>Preserva el significado semántico de «mega» = top 1% de severidad por región.</li>
     </ul>
     <p><strong>Por qué regional y no global:</strong></p>
     <ul>
-      <li>P99 global del subset = 340 ha. Para Biobío (régimen mediterráneo de fuegos
-          pequeños y frecuentes) este umbral casi nunca se alcanza; para Aysén (patagónico,
-          fuegos lentos pero grandes, P99 = 1.546 ha) es demasiado bajo y haría que casi
-          todos los fuegos patagónicos calificaran como mega.</li>
+      <li>P99 global del subset = 148.3 ha. Para Biobío el P99 regional es 89.2 ha; para
+          Maule es 204.0 ha y para Araucanía 250.3 ha. Un umbral único borraría diferencias
+          regionales relevantes.</li>
       <li>Un umbral regional respeta el régimen de fuego de cada bioma chileno.</li>
       <li>El modelo aprenderá «¿qué hace que un fuego sea grande <em>para su región</em>?»,
           más informativo que «¿es grande comparado con todo Chile?».</li>
@@ -1010,31 +986,27 @@
     Superficie quemada y FLI están correlacionadas pero no son equivalentes. Un fuego de 200 ha
     en bosque seco con viento extremo (alto FLI) y un fuego de 200 ha en pastizal con propagación
     lenta (bajo FLI) reciben el mismo label L1b, pero solo el primero es EWE según Tedim. Por
-    eso L1b funciona como bootstrap operacional y sensitivity analysis, no como sustituto de L2.
+    eso L1b funciona como sensitivity analysis, no como sustituto de L2.
   </div>
 
-  <h3>5.3 Exclusión de regiones de baja muestra</h3>
+  <h3>5.3 Alcance regional del estudio</h3>
   <p>
-    Se excluyen del entrenamiento las regiones con &lt; 50 eventos en el subset 2016-2017:
-    <strong>Atacama</strong> (n=44) y <strong>Arica y Parinacota</strong> (n=5). Total:
-    <strong>49 eventos descartados</strong> (0.40% del subset acotado), quedando 12.332
-    filas en 11 regiones.
+    No se aplica exclusión por baja muestra dentro del subset analítico: Maule, Biobío y
+    Araucanía tienen miles de eventos cada una. El filtro regional es una decisión de alcance
+    del estudio, no una limpieza por insuficiencia estadística.
   </p>
 
   <p>
-    Adicionalmente, tres regiones del CONAF original (<strong>Antofagasta</strong>,
-    <strong>Tarapacá</strong>, <strong>Ñuble</strong>) <em>no aparecen</em> en este subset:
-    no tienen cobertura ERA5 dentro del bounding box trabajado o no tuvieron eventos
-    enriquecibles durante 2016-2017. No requieren acción explícita.
+    <strong>Ñuble</strong> se documenta como caso especial: para 2012-2018 no aparece separada
+    en la columna <code>region</code>, por lo que se mantiene absorbida en Biobío histórico.
   </p>
 
   <div class="callout callout-justification">
     <span class="callout-title">Justificación</span>
     <ul>
-      <li>P99 con n &lt; 50 es estadísticamente inestable (intervalo de confianza enorme).</li>
-      <li>El modelo aprendería ruido específico de esas regiones, no señal generalizable.</li>
-      <li>Son regiones del norte árido donde los incendios forestales no son representativos
-          del problema operacional chileno (la mayoría son quemas agrícolas pequeñas).</li>
+      <li>El bbox actual cubre el 100% de los eventos georreferenciados de Maule, Biobío y Araucanía en 2012-2018.</li>
+      <li>Las tres regiones concentran 29.510 eventos, suficiente para L1b y para modelado L2.</li>
+      <li>El alcance evita mezclar regímenes de fuego de zonas fuera del foco centro-sur.</li>
     </ul>
   </div>
 
@@ -1052,11 +1024,8 @@
     <li>Captura comportamiento físico del fuego, no solo el outcome de superficie.</li>
   </ul>
 
-  <p><strong>Rol de L1b (proxy preliminar + sensitivity)</strong>:</p>
+  <p><strong>Rol de L1b (proxy secundario + sensitivity)</strong>:</p>
   <ol>
-    <li><strong>Bootstrap del pipeline</strong>: permite implementar y validar el flujo
-        XGBoost+SHAP end-to-end mientras se construye el pipeline MODIS-FRP (autenticación GEE,
-        query MOD14, conversión FRP→FLI). Cuando L2 esté listo, solo cambia el target.</li>
     <li><strong>Sensitivity analysis en el paper</strong>: comparar SHAPs L1b vs L2 cuantifica
         cuánto del resultado depende de la definición del target. Drivers consistentes entre
         ambos son robustos; drivers que solo aparecen en uno revelan artefactos del label.</li>
@@ -1079,15 +1048,15 @@
   <h3>6.1 Diagrama de flujo general</h3>
 
   <pre class="flow-diagram">
-INPUT: data/processed/conaf_enriched_latest.parquet
-       12.381 eventos · 66 columnas (27 CONAF + 36 ERA5 + 3 matching)
-       Período: 2016-2017 · 13 regiones presentes
+INPUT: data/processed/conaf_enriched_2012_2018.parquet
+       Run base 2012-2018 · 42.963 eventos CONAF
+       Subset analítico · 29.510 eventos en Maule, Biobío y Araucanía
     │
     ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ [1] Filtrar regiones de baja muestra (n_eventos < 50)          │
-│     Excluir: Atacama (n=44), Arica y Parinacota (n=5)          │
-│     → 12.332 eventos en 11 regiones                            │
+│ [1] Filtrar alcance regional del estudio                       │
+│     Mantener: Maule, Biobío, Araucanía                         │
+│     → 29.510 eventos                                           │
 └────────────────────────────────────────────────────────────────┘
     │
     ├═══════════════════════════════════╗  ←── PATH PRINCIPAL (target objetivo)
@@ -1098,7 +1067,7 @@ INPUT: data/processed/conaf_enriched_latest.parquet
 │   (solo para L1b)    │    ║                                     ║
 │                      │    ║  [2b.1] Filtrar candidatos > 50 ha  ║
 │  Para cada región:   │    ║         (~396 en subset)            ║
-│  P99 de              │    ║  [2b.2] Query MODIS vía Earth Engine║
+│  P99 de              │    ║  [2b.2] Query MODIS vía FIRMS API   ║
 │  superficie_quemada  │    ║  [2b.3] FRP → FLI (Wooster 2003)    ║
 │  → {region: p99_ha}  │    ║  [2b.4] label_l2 = 1 si FLI ≥ 10k   ║
 └──────────────────────┘    ║         ~30–80 positivos (estimado) ║
@@ -1108,8 +1077,7 @@ INPUT: data/processed/conaf_enriched_latest.parquet
 │ [3] L1b (proxy):     │                │
 │   label_l1b = 1 si   │                │
 │   area ≥ P99_region  │                │
-│   ~129 positivos     │                │
-│   (≈1%)              │                │
+│   ≈1% positivos      │                │
 └──────────────────────┘                │
     │                                   │
     └───────────────┬───────────────────┘
@@ -1126,25 +1094,25 @@ OUTPUT: data/processed/conaf_labeled.parquet
 
 LEYENDA:
   ║ ═  Path principal — L2 (target objetivo, paper reporta sobre este)
-  │ ─  Path secundario — L1b (proxy preliminar + sensitivity analysis)
+  │ ─  Path secundario — L1b (proxy secundario + sensitivity analysis)
   </pre>
 
-  <h3>6.2 Paso 1 — Filtrar regiones de baja muestra</h3>
+  <h3>6.2 Paso 1 — Filtrar alcance regional</h3>
   <p>
-    <strong>Entrada</strong>: <code>conaf_enriched_latest.parquet</code> (12.381 filas,
-    13 regiones presentes).<br>
-    <strong>Proceso</strong>: descartar filas cuya <code>region</code> esté en
-    <code>{Atacama, Arica y Parinacota}</code>.<br>
-    <strong>Salida</strong>: DataFrame con 12.332 filas, 11 regiones.
+    <strong>Entrada</strong>: <code>conaf_enriched_2012_2018.parquet</code> o
+    <code>conaf_enriched_latest.parquet</code> actualizado a 2012-2018.<br>
+    <strong>Proceso</strong>: mantener filas cuya <code>region</code> esté en
+    <code>{Maule, Biobío, Araucanía}</code>.<br>
+    <strong>Salida</strong>: DataFrame con 29.510 eventos antes del enriquecimiento final.
   </p>
 
   <pre><code>import pandas as pd
 
-REGIONES_EXCLUIDAS = {"Atacama", "Arica y Parinacota"}
+REGIONES_ESTUDIO = {"Maule", "Biobío", "Araucanía"}
 
 df = pd.read_parquet("data/processed/conaf_enriched_latest.parquet")
-df = df[~df["region"].isin(REGIONES_EXCLUIDAS)].reset_index(drop=True)
-print(f"Eventos retenidos: {len(df):,}")  # Esperado: 12.332
+df = df[df["region"].isin(REGIONES_ESTUDIO)].reset_index(drop=True)
+print(f"Eventos retenidos: {len(df):,}")  # Esperado: 29.510
 </code></pre>
 
   <h3>6.3 Paso 2 — Calcular threshold P99 regional</h3>
@@ -1167,8 +1135,7 @@ def p99_por_region(df: pd.DataFrame) -> dict:
     return thresholds
 
 p99_dict = p99_por_region(df)
-# {'Biobío': 124.8, 'Araucanía': 114.2, 'Maule': 640.2,
-#  'Metropolitana': 1419.1, "O'Higgins": 4009.6, 'Aysén': 1545.7, ...}
+# {'Araucanía': 250.3, 'Biobío': 89.2, 'Maule': 204.0}
 </code></pre>
 
   <h3>6.4 Paso 3 — Label L1b (hectáreas)</h3>
@@ -1185,7 +1152,7 @@ p99_dict = p99_por_region(df)
 
 df["label_l1b"] = aplicar_l1b(df, p99_dict)
 print(f"Positivos L1b: {df['label_l1b'].sum():,} ({df['label_l1b'].mean()*100:.2f}%)")
-# Esperado: ~129 positivos (~1.05%)
+# Esperado: cercano a 1% por construcción
 </code></pre>
 
   <h3>6.5 Paso 4 — Label L2 (MODIS-FRP → FLI)</h3>
@@ -1196,20 +1163,24 @@ print(f"Positivos L1b: {df['label_l1b'].sum():,} ({df['label_l1b'].mean()*100:.2
     su especificación formal está en la <a href="#implementacion-l2">Sección 7 (Methods)</a>.
   </div>
   <p>
-    Pipeline más complejo. Se ejecuta solo sobre fuegos candidatos
-    (<code>superficie_quemada_total_ha &gt; 50</code>) para optimizar consultas a Earth Engine,
-    ya que MODIS no detecta fuegos más pequeños.
+    El ETL productivo usa NASA FIRMS Area API y ejecuta el matching sobre eventos CONAF con
+    coordenadas y timestamp válidos. La guardia de superficie mínima se aplica al asignar
+    <code>label_l2</code>, no como feature de entrenamiento.
   </p>
 
-  <h4>4.1 Filtrar candidatos</h4>
-  <pre><code>candidatos = df[df["superficie_quemada_total_ha"] &gt; 50].copy()
-print(f"Candidatos MODIS: {len(candidatos):,}")  # ~396 en subset 2016-2017
+  <h4>4.1 Ejecutar matching FIRMS</h4>
+  <pre><code>from src.modis import download_firms_for_conaf, load_firms_csvs, match_modis_to_conaf, label_l2
+
+firms_paths = download_firms_for_conaf(conaf, bbox=download_bbox)
+modis_df = load_firms_csvs(firms_paths)
+matches = match_modis_to_conaf(enriched, modis_df)
+enriched = label_l2(enriched, matches)
 </code></pre>
 
-  <h4>4.2 Query MODIS vía Google Earth Engine</h4>
+  <h4>4.2 Query MODIS vía NASA FIRMS</h4>
   <p>
-    Para cada candidato, consultar la colección <code>MODIS/061/MOD14A1</code> +
-    <code>MYD14A1</code> en una ventana espacial (5 km de radio alrededor de
+    Para cada bloque temporal, consultar <code>MODIS_SP</code> vía FIRMS Area API y matchear
+    detecciones por ventana espacial (5 km de radio alrededor de
     <code>lat/lon</code>) y temporal (<code>fecha_hora_inicio</code> a
     <code>fecha_hora_inicio + duracion</code> o + 7 días si duración es inválida).
   </p>
@@ -1438,9 +1409,8 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
     El segundo término exige una superficie quemada mínima de 50 ha (el límite de detección de
     MODIS). Sin esta guardia, el radio de matching de 5 km puede atribuir el FRP de un megaincendio
     vecino a un evento CONAF pequeño y producir falsos positivos físicamente incoherentes
-    (un EWE no ocupa &lt; 50 ha). En la validación 2016-2017, la guardia descartó 2 de 9 positivos
-    candidatos (eventos de 0,01 y 0,24 ha en Biobío, vecinos de los megaincendios del 26-ene-2017),
-    dejando 7 EWE coherentes.
+    (un EWE no ocupa &lt; 50 ha). En cada corrida, reportar cuántos candidatos positivos descarta
+    esta guardia para auditar falsos positivos por atribución espacial.
   </div>
 
   <h3>7.5 Tabla de parámetros</h3>
@@ -1586,17 +1556,16 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
 
   <h3>8.1 Class imbalance</h3>
   <p>
-    Con label L1b a P99 regional sobre el subset 2016-2017: <strong>129 positivos
-    (~1.05%)</strong> sobre 12.332 filas filtradas. Con label L2 (MODIS): probablemente
-    menor (~0.2–0.6% según calidad del match). Esto es un imbalance severo y requiere
-    mitigación explícita.
+    Con L1b a P99 regional sobre 29.510 eventos, el proxy produce un imbalance cercano a 1%.
+    Con L2, usar los conteos reales de <code>label_l2</code> del parquet enriquecido 2012-2018;
+    por diseño sigue siendo un problema severamente desbalanceado.
   </p>
 
   <h4>Opciones de mitigación en XGBoost</h4>
   <ul>
     <li><strong><code>scale_pos_weight</code></strong>: factor multiplicador para el gradiente
         de la clase positiva. Setting recomendado:
-        <code>scale_pos_weight = n_neg / n_pos</code> (≈99 para L1b).</li>
+        <code>scale_pos_weight = n_neg / n_pos</code> calculado desde el target final.</li>
     <li><strong>Focal loss</strong> (custom objective): pondera más los ejemplos difíciles.
         Útil cuando los positivos son heterogéneos.</li>
     <li><strong>Undersampling de negativos</strong>: muestrear aleatoriamente el 5-10% de
@@ -1621,21 +1590,15 @@ print(f"Solo L2 = 1:   {((df['label_l1b']==0) & (df['label_l2']==1)).sum():,}")
 
   <h3>8.2 Train/test split</h3>
   <p>
-    <strong>No usar split aleatorio</strong> sobre el subset 2016-2017: los megaincendios
-    están concentrados en enero-febrero 2017. Un split aleatorio mezclaría observaciones
-    fuertemente correlacionadas temporal y espacialmente.
+    <strong>No usar split aleatorio</strong> como evaluación principal: los incendios tienen
+    correlación temporal y espacial, y enero-febrero 2017 concentra eventos extremos.
   </p>
   <ul>
-    <li><strong>Split temporal intra-subset</strong>: entrenar con temporada 2016 (7.475
-        eventos, incendios «normales»), validar con 2017 (4.906 eventos, incluye el evento
-        catastrófico). Pone a prueba la capacidad del modelo de predecir el régimen extremo
-        a partir del régimen normal — útil para XAI, riesgoso para evaluar performance
-        bruta dado el desbalance entre los dos años.</li>
-    <li><strong>Split espacial complementario</strong>: leave-one-region-out CV para evaluar
-        generalización a regiones no vistas.</li>
-    <li><strong>Roadmap</strong>: ampliar el enriched a 2002-2020 antes del entrenamiento
-        final. El protocolo objetivo será train 2002-2017, validate 2018-2020 (como en
-        diseños previos), una vez disponible la cobertura ERA5 completa.</li>
+    <li><strong>Split temporal</strong>: entrenar con 2012-2017 y validar/testear en 2018.</li>
+    <li><strong>Split espacial complementario</strong>: leave-one-region-out entre Maule,
+        Biobío y Araucanía.</li>
+    <li><strong>Validación de estrés</strong>: reportar métricas específicas para enero-febrero
+        2017 por concentración de eventos extremos.</li>
   </ul>
 </section>
 

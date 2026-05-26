@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data Section Draft - Wildfire XAI Paper</title>
+<style>
+	:root {
+		--text: #1f2933;
+		--muted: #52606d;
+		--border: #d9e2ec;
+		--soft: #f5f7fa;
+		--accent: #9a3412;
+		--link: #1d4ed8;
+		--code: #111827;
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		background: #ffffff;
+		color: var(--text);
+		font-family: Georgia, "Times New Roman", serif;
+		font-size: 16px;
+		line-height: 1.58;
+	}
+	main {
+		max-width: 980px;
+		margin: 0 auto;
+		padding: 42px 28px 64px;
+	}
+	header {
+		border-bottom: 2px solid var(--border);
+		margin-bottom: 30px;
+		padding-bottom: 18px;
+	}
+	h1, h2, h3 {
+		color: #111827;
+		font-family: Arial, Helvetica, sans-serif;
+		line-height: 1.2;
+	}
+	h1 {
+		font-size: 2rem;
+		margin: 0 0 8px;
+	}
+	h2 {
+		border-bottom: 1px solid var(--border);
+		font-size: 1.35rem;
+		margin: 34px 0 14px;
+		padding-bottom: 6px;
+	}
+	h3 {
+		font-size: 1.05rem;
+		margin: 24px 0 10px;
+	}
+	p {
+		margin: 10px 0;
+		text-align: justify;
+	}
+	.subtitle {
+		color: var(--muted);
+		font-family: Arial, Helvetica, sans-serif;
+		margin: 0;
+	}
+	.note {
+		background: var(--soft);
+		border-left: 4px solid var(--accent);
+		margin: 16px 0;
+		padding: 10px 14px;
+	}
+	code, pre {
+		font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+	}
+	code {
+		background: var(--soft);
+		border-radius: 3px;
+		color: var(--code);
+		font-size: 0.92em;
+		padding: 0.08em 0.28em;
+	}
+	pre {
+		background: #f8fafc;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		color: var(--code);
+		font-size: 0.84rem;
+		overflow-x: auto;
+		padding: 14px;
+		white-space: pre;
+	}
+	table {
+		border-collapse: collapse;
+		font-family: Arial, Helvetica, sans-serif;
+		font-size: 0.82rem;
+		margin: 14px 0 18px;
+		width: 100%;
+	}
+	th, td {
+		border: 1px solid var(--border);
+		padding: 7px 8px;
+		text-align: left;
+		vertical-align: top;
+	}
+	th {
+		background: #e5e7eb;
+		color: #111827;
+		font-weight: 700;
+	}
+	tbody tr:nth-child(even) {
+		background: #fafafa;
+	}
+	ol, ul {
+		margin: 8px 0 8px 22px;
+		padding: 0;
+	}
+	li { margin: 5px 0; }
+	a { color: var(--link); }
+	.eq {
+		background: #ffffff;
+		border-left: 3px solid var(--border);
+		font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+		margin: 12px 0;
+		padding: 8px 12px;
+		white-space: pre-wrap;
+	}
+	@media (max-width: 720px) {
+		main { padding: 28px 16px 44px; }
+		table { display: block; overflow-x: auto; }
+		p { text-align: left; }
+	}
+</style>
+</head>
+<body>
+<main>
+<header>
+	<h1>III. Data</h1>
+	<p class="subtitle">Standalone English draft for the paper data section. Citation keys are LaTeX-compatible.</p>
+</header>
+
+<section id="conaf">
+	<h2>III-A. CONAF: Historical Fire Event Records</h2>
+	<p>
+		The primary event inventory is the historical wildfire record maintained by the Chilean National Forestry Corporation
+		(CONAF), distributed through the Datos para Resiliencia platform \cite{conaf_dataset}. The local cleaned version used
+		in this project contains 109,947 wildfire records from the 2002-2003 through 2019-2020 fire seasons. Each row
+		represents a reported ignition or fire event and includes administrative location, ignition timing, event metadata,
+		final burned-area attributes, and point coordinates for the estimated ignition location.
+	</p>
+	<p>
+		For modeling, the CONAF inventory is treated as an event anchor rather than as a complete predictor matrix. Latitude,
+		longitude, and ignition time define the spatio-temporal key used to enrich each event with meteorological and
+		land-surface covariates. In contrast, final burned area, operational alert state, duration, and scenario labels are
+		recorded after the fire has developed and are therefore not valid ex-ante predictors for a model intended to support
+		resource allocation at or near ignition.
+	</p>
+
+	<table id="conaf-variable-table">
+		<thead>
+			<tr>
+				<th>#</th>
+				<th>Variable</th>
+				<th>Role</th>
+				<th>Use in this study</th>
+			</tr>
+		</thead>
+		<tbody>
+			<tr><td>1</td><td><code>region</code></td><td>metadata</td><td>Administrative context; may support stratified analysis.</td></tr>
+			<tr><td>2</td><td><code>provincia</code></td><td>metadata</td><td>Intermediate administrative context.</td></tr>
+			<tr><td>3</td><td><code>comuna</code></td><td>spatial key</td><td>Local administrative spatial context.</td></tr>
+			<tr><td>4</td><td><code>temporada</code></td><td>temporal key</td><td>Fire-season identifier for temporal splits and reporting.</td></tr>
+			<tr><td>5</td><td><code>nombre</code></td><td>metadata</td><td>Event name; retained for traceability, not as a predictor.</td></tr>
+			<tr><td>6</td><td><code>fecha</code></td><td>temporal key</td><td>Ignition date used to build the event timestamp.</td></tr>
+			<tr><td>7</td><td><code>hora_inicio</code></td><td>temporal key</td><td>Ignition hour used to build the event timestamp.</td></tr>
+			<tr><td>8</td><td><code>duracion_minutos</code></td><td>excluded ex-post variable</td><td>Known only after the event ends.</td></tr>
+			<tr><td>9</td><td><code>alerta</code></td><td>excluded ex-post variable</td><td>Operational response state; not available at ignition.</td></tr>
+			<tr><td>10</td><td><code>escenario</code></td><td>excluded ex-post variable</td><td>Operational/event classification; may encode later fire behavior.</td></tr>
+			<tr><td>11</td><td><code>causa</code></td><td>possible leakage</td><td>Cause attribution can be assigned after investigation.</td></tr>
+			<tr><td>12</td><td><code>superficie_quemada_pino_a_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>13</td><td><code>superficie_quemada_pino_b_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>14</td><td><code>superficie_quemada_pino_c_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>15</td><td><code>superficie_quemada_eucalipto_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>16</td><td><code>superficie_quemada_otras_plantas_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>17</td><td><code>superficie_quemada_arbolado_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>18</td><td><code>superficie_quemada_matorral_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>19</td><td><code>superficie_quemada_pastizal_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>20</td><td><code>superficie_quemada_agricola_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>21</td><td><code>superficie_quemada_desechos_ha</code></td><td>outcome</td><td>Final burned area by fuel class.</td></tr>
+			<tr><td>22</td><td><code>superficie_quemada_total_ha</code></td><td>outcome</td><td>Final burned area; used only for descriptive analysis and the L1 proxy.</td></tr>
+			<tr><td>23</td><td><code>latitud</code></td><td>spatial key</td><td>Point coordinate for event enrichment.</td></tr>
+			<tr><td>24</td><td><code>longitud</code></td><td>spatial key</td><td>Point coordinate for event enrichment.</td></tr>
+			<tr><td>25</td><td><code>datum</code></td><td>metadata</td><td>Coordinate reference metadata.</td></tr>
+			<tr><td>26</td><td><code>geometry</code></td><td>spatial key</td><td>Geometric representation of the event point.</td></tr>
+			<tr><td>27</td><td><code>fecha_hora_inicio</code></td><td>temporal key</td><td>Local ignition timestamp in Chilean time.</td></tr>
+			<tr><td>28</td><td><code>fecha_hora_inicio_utc</code></td><td>temporal key</td><td>UTC timestamp used for ERA5-Land and FIRMS matching.</td></tr>
+		</tbody>
+	</table>
+</section>
+
+<section id="eda">
+	<h2>III-B. Exploratory Analysis of CONAF Records</h2>
+	<p>
+		The exploratory analysis supports the premise that wildfire impact in Chile is highly concentrated in the upper tail.
+		In the cleaned CONAF inventory, 1,240 events account for 80% of the total burned area, corresponding to approximately
+		1.13% of all records. The median burned area is 0.30 ha, whereas the 99th percentile is 154.0 ha and the maximum
+		recorded event reaches 159,812.58 ha. This asymmetry is consistent with the self-organized criticality framing used
+		in forest-fire literature \cite{malamud1998}.
+	</p>
+	<p>
+		This distributional evidence is used only to motivate the learning problem. It does not imply that final burned area
+		should be used as an ex-ante feature. Instead, burned-area statistics define a less faithful exploratory proxy label
+		and provide sensitivity checks against the physically grounded MODIS/FIRMS label described below.
+	</p>
+	<div class="note">
+		<strong>Label framing.</strong> <code>L1</code> is exploratory, less faithful, and area-based: it is a proxy derived
+		from burned-area thresholds. It is useful for sensitivity analysis and for comparing model behavior against the
+		heavy-tailed CONAF outcome distribution. <code>L2</code> is the main, more exhaustive, physically grounded label:
+		it uses satellite-observed fire radiative power converted into fire-line intensity and is the preferred training
+		target for the paper.
+	</div>
+</section>
+
+<section id="era5">
+	<h2>III-C. ERA5-Land: Meteorological and Land-Surface Covariates</h2>
+	<p>
+		Each CONAF event is enriched with ERA5-Land covariates at the ignition point and nearest available hourly timestamp.
+		ERA5 provides a physically consistent global reanalysis suitable for retrospective event reconstruction
+		\cite{era5}. The project uses variables selected for fire-weather relevance and for consistency with recent
+		wildfire prediction work using machine learning and explainable AI \cite{zakari2025spatio,liao2025tackling}.
+	</p>
+	<p>
+		The temporal ERA5-Land variables include 2 m air temperature, 2 m dew-point temperature, 10 m wind components,
+		total precipitation, downward surface solar radiation, soil temperature at four layers, volumetric soil water at
+		four layers, potential evaporation, total evaporation, evaporation from vegetation transpiration, and leaf area
+		index for high and low vegetation. Static land-surface covariates include soil type, land-sea mask, high- and
+		low-vegetation cover, and high- and low-vegetation type.
+	</p>
+	<p>
+		The enrichment is formulated as a nearest-neighbor extraction problem. For event <em>i</em>, the location
+		<code>(lat_i, lon_i)</code> and timestamp <code>t_i</code> are matched to the nearest ERA5-Land grid cell and
+		hour. Match quality is retained separately through distance and temporal offset fields so that downstream training
+		can filter or audit events with poor coverage.
+	</p>
+</section>
+
+<section id="derived">
+	<h2>III-D. Derived Meteorological Variables</h2>
+	<p>
+		Several derived variables are computed from the raw ERA5-Land fields to express meteorological mechanisms more
+		directly. Air and soil temperatures are converted from Kelvin to Celsius. Wind speed and wind direction are derived
+		from the horizontal wind components. Total precipitation is converted from meters to millimeters. Relative humidity
+		and vapor-pressure deficit are derived from air temperature and dew-point temperature using a Magnus-type saturation
+		vapor pressure relationship.
+	</p>
+	<div class="eq">T_C = T_K - 273.15</div>
+	<div class="eq">WS = sqrt(u10^2 + v10^2)</div>
+	<div class="eq">RH = 100 * e_s(T_d) / e_s(T)</div>
+	<div class="eq">VPD = e_s(T) - e_s(T_d)</div>
+	<p>
+		These transformations preserve the ex-ante nature of the predictors because all inputs are meteorological or
+		land-surface conditions available at or before ignition.
+	</p>
+</section>
+
+<section id="modis">
+	<h2>III-E. MODIS/FIRMS and Label Construction</h2>
+	<p>
+		The main target follows the Extreme Wildfire Event (EWE) paradigm proposed by Tedim et al. \cite{tedim2018EWE}.
+		In this framing, an extreme fire is not defined only by its final burned area. It is a behavioral and operational
+		process characterized by high fire intensity, rapid spread, spotting potential, pyroconvective behavior, and the
+		possibility of exceeding suppression capacity. This distinction is central for the present study: a fire can become
+		operationally extreme before its final scar is known.
+	</p>
+	<p>
+		The project operationalizes this concept using MODIS active-fire detections exposed through NASA FIRMS
+		\cite{nasaFirmsMODIS}. MODIS provides thermal anomaly detections from Terra and Aqua and reports Fire Radiative
+		Power (FRP), a satellite-derived measure of radiative energy release \cite{kaufman1998MODIS,giglio2016MODIS}.
+		FRP is then converted into an estimated Fire-Line Intensity (FLI) following the fire radiative energy literature
+		\cite{wooster2003FRE}. In the implemented peak-local interpretation, the highest matched MODIS FRP pixel is divided
+		by a one-kilometer MODIS pixel-front length and by a radiant fraction.
+	</p>
+	<div class="eq">FLI_hat_i [kW/m] = (1000 * FRP_max_i [MW] / eta_r) / L_p [m]</div>
+	<p>
+		Using the current implementation, <code>eta_r = 0.17</code> and <code>L_p = 1000 m</code>. The binary target is
+		defined as:
+	</p>
+	<div class="eq">label_l2_i = 1[FLI_hat_i >= 10000 kW/m and N_MODIS_i > 0 and A_i >= 50 ha]</div>
+	<p>
+		The 10,000 kW/m threshold corresponds to the category 5+ operational EWE boundary discussed by Tedim et al.
+		\cite{tedim2018EWE}. The MODIS detection guard requires at least one valid active-fire match. The additional
+		minimum-area guard is used only to reduce false positives caused by spatial matching to an adjacent large fire; it
+		does not turn final burned area into a model feature.
+	</p>
+	<div class="note">
+		<strong>Methodological note.</strong> The FIRE-RES/CONAF field-annotation context should be cited here once the
+		correct project source is confirmed. TODO_VERIFY_FIRE_RES_CITATION. The intended role of that reference is to
+		motivate future operational annotation of ROS, spotting distance, flame length, plume behavior, and suppression
+		capacity, not to replace the MODIS/FIRMS target in the current retrospective dataset.
+	</div>
+</section>
+
+<section id="pipeline">
+	<h2>III-F. Enrichment Pipeline</h2>
+	<p>
+		The data construction pipeline starts from the cleaned CONAF event table and produces one enriched row per event.
+		First, local ignition date and ignition hour are combined and converted to UTC. Second, the UTC timestamp and
+		coordinates are used to extract ERA5-Land temporal and invariant variables. Third, derived meteorological variables
+		are computed from the raw ERA5-Land fields. Fourth, FIRMS active-fire detections are queried over padded event days
+		and matched to CONAF events within a local space-time window. Finally, the L2 label is assigned from the matched
+		FRP-to-FLI conversion.
+	</p>
+	<p>
+		This design keeps feature construction and target construction separate. ERA5-Land and static land-surface variables
+		form the candidate predictor set. MODIS/FIRMS fields are retained only for target auditability and are excluded from
+		training features.
+	</p>
+</section>
+
+<section id="training">
+	<h2>III-G. Training Dataset</h2>
+	<p>
+		The supervised learning task is defined after ignition: given a reported fire event, estimate whether it will reach
+		the L2 extreme-fire threshold. This is aligned with fire triage and resource-allocation settings in which only
+		information available at ignition should be used \cite{coffield2019FireSize}. The retained predictors therefore
+		include location, ignition time features, ERA5-Land meteorological variables, derived meteorological variables, and
+		static land-surface descriptors.
+	</p>
+	<p>
+		The following fields are explicitly excluded from the training feature matrix: MODIS detections, FRP, FLI, and all
+		MODIS/FIRMS-derived audit columns; <code>superficie_quemada_*</code>, <code>duracion_minutos</code>,
+		<code>alerta</code>, <code>escenario</code>, and other post-ignition outcomes; and any target columns including
+		<code>label_l1</code>, <code>label_l2</code>, or their intermediate computations. The model is trained only on
+		ex-ante predictors available at or before ignition.
+	</p>
+	<p>
+		Final L2 class counts for the intended 2012-2018 training window are <code>PENDING_VERIFICATION</code> until the
+		corresponding enriched parquet is produced locally and audited. Existing partial enriched outputs should be treated
+		as implementation diagnostics rather than as final paper metrics.
+	</p>
+</section>
+
+<section id="limitations">
+	<h2>III-H. Limitations and Future Field Annotation</h2>
+	<p>
+		The proposed dataset inherits limitations from both administrative fire records and remote sensing. CONAF provides
+		high-value historical event information, but several variables are ex-post operational summaries rather than
+		conditions known at ignition. ERA5-Land offers spatially and temporally consistent meteorology, but it cannot
+		resolve all local wind, fuel, and topographic effects that influence rapid spread. MODIS/FIRMS provides historical
+		active-fire detections and FRP, but detections depend on overpass time, cloud and smoke conditions, pixel geometry,
+		and sensor saturation or omission in small fires.
+	</p>
+	<p>
+		For Chile, prior work emphasizes that fire activity is shaped by climate, land cover, plantation structure, human
+		ignition patterns, and regional bioclimatic gradients \cite{mcwethy2018Landscape,ubeda2016Chile}. The present
+		dataset captures only part of this causal structure. A stronger future dataset would combine the current
+		retrospective enrichment with field annotation of rate of spread, flame length, spotting distance, crown-fire
+		activity, convective plume behavior, suppression difficulty, and resource saturation. Those variables would allow
+		the EWE concept to be tested more directly rather than inferred from MODIS FRP alone.
+	</p>
+</section>
+
+<section id="bibtex">
+	<h2>III-I. BibTeX References</h2>
+	<pre><code>@misc{conaf_dataset,
+  author       = {{Corporacion Nacional Forestal}},
+  title        = {Registro historico de incendios forestales},
+  year         = {2024},
+  howpublished = {Datos para Resiliencia, V1},
+  doi          = {10.71578/UXAUN5},
+  url          = {https://datospararesiliencia.cl/dataset.xhtml?persistentId=doi:10.71578/UXAUN5}
+}
+
+@article{era5,
+  author  = {Hersbach, Hans and Bell, Bill and Berrisford, Paul and Hirahara, Shoji and Horanyi, Andras and Munoz-Sabater, Joaquin and Nicolas, Julien and Peubey, Carole and Radu, Raluca and Schepers, Dinand and Simmons, Adrian and Soci, Cornel and Abdalla, Saleh and Abellan, Xavier and Balsamo, Gianpaolo and Bechtold, Peter and Biavati, Gionata and Bidlot, Jean and Bonavita, Massimo and De Chiara, Giovanna and Dahlgren, Per and Dee, Dick and Diamantakis, Michail and Dragani, Rossana and Flemming, Johannes and Forbes, Richard and Fuentes, Manuel and Geer, Alan and Haimberger, Leopold and Healy, Sean and Hogan, Robin J. and Holm, Elin and Janiskova, Marta and Keeley, Sarah and Laloyaux, Patrick and Lopez, Philippe and Lupu, Cristina and Radnoti, Gabor and de Rosnay, Patricia and Rozum, Iryna and Vamborg, Freja and Villaume, Sebastien and Thepaut, Jean-Noel},
+  title   = {The {ERA5} global reanalysis},
+  journal = {Quarterly Journal of the Royal Meteorological Society},
+  year    = {2020},
+  volume  = {146},
+  number  = {730},
+  pages   = {1999--2049},
+  doi     = {10.1002/qj.3803}
+}
+
+@article{zakari2025spatio,
+  author    = {Zakari, Rufai Yusuf and Malik, Owais Ahmed and Ong, Wee-Hong},
+  title     = {Spatio-temporal wildfire forecasting in Australia using deep learning and explainable {AI}},
+  journal   = {Modeling Earth Systems and Environment},
+  year      = {2025},
+  volume    = {11},
+  number    = {6},
+  pages     = {425},
+  publisher = {Springer},
+  doi       = {10.1007/s40808-025-02621-7}
+}
+
+@article{liao2025tackling,
+  author    = {Liao, Bin and Zhou, Tao and Liu, Yanping and Li, Min and Zhang, Tao},
+  title     = {Tackling the wildfire prediction challenge: an explainable artificial intelligence ({XAI}) model combining extreme gradient boosting ({XGBoost}) with {SHapley} additive ex{Planations} ({SHAP}) for enhanced interpretability and accuracy},
+  journal   = {Forests},
+  year      = {2025},
+  volume    = {16},
+  number    = {4},
+  pages     = {689},
+  publisher = {MDPI},
+  doi       = {10.3390/f16040689}
+}
+
+@article{malamud1998,
+  author  = {Malamud, B. D. and Morein, G. and Turcotte, D. L.},
+  title   = {Forest fires: An example of self-organized critical behavior},
+  journal = {Science},
+  year    = {1998},
+  volume  = {281},
+  number  = {5384},
+  pages   = {1840--1842},
+  doi     = {10.1126/science.281.5384.1840}
+}
+
+@article{tedim2018EWE,
+  author  = {Tedim, Fantina and Leone, Vittorio and Amraoui, Malik and Bouillon, Christophe and Coughlan, Michael R. and Delogu, Giuseppe M. and Fernandes, Paulo M. and Ferreira, Carmen and McCaffrey, Sarah and McGee, Tara K. and Parente, Joana and Paton, Douglas and Pereira, Mario G. and Ribeiro, Luis M. and Viegas, Domingos X. and Xanthopoulos, Gavriil},
+  title   = {Defining extreme wildfire events: Difficulties, challenges, and impacts},
+  journal = {Fire},
+  year    = {2018},
+  volume  = {1},
+  number  = {1},
+  pages   = {9},
+  doi     = {10.3390/fire1010009}
+}
+
+@article{wooster2003FRE,
+  author  = {Wooster, Martin J. and Zhukov, Boris and Oertel, Dieter},
+  title   = {Fire radiative energy for quantitative study of biomass burning: Derivation from the {BIRD} experimental satellite and comparison to {MODIS} fire products},
+  journal = {Remote Sensing of Environment},
+  year    = {2003},
+  volume  = {86},
+  number  = {1},
+  pages   = {83--107},
+  doi     = {10.1016/S0034-4257(03)00070-1}
+}
+
+@article{giglio2016MODIS,
+  author  = {Giglio, Louis and Schroeder, Wilfrid and Justice, Christopher O.},
+  title   = {The Collection 6 {MODIS} active fire detection algorithm and fire products},
+  journal = {Remote Sensing of Environment},
+  year    = {2016},
+  volume  = {178},
+  pages   = {31--41},
+  doi     = {10.1016/j.rse.2016.02.054}
+}
+
+@article{kaufman1998MODIS,
+  author  = {Kaufman, Yoram J. and Justice, Christopher O. and Flynn, Luke P. and Kendall, Jackie D. and Prins, Elaine M. and Giglio, Louis and Ward, Darold E. and Menzel, W. Paul and Setzer, Alberto W.},
+  title   = {Potential global fire monitoring from {EOS}-{MODIS}},
+  journal = {Journal of Geophysical Research: Atmospheres},
+  year    = {1998},
+  volume  = {103},
+  number  = {D24},
+  pages   = {32215--32238},
+  doi     = {10.1029/98JD01644}
+}
+
+@article{coffield2019FireSize,
+  author  = {Coffield, Shane R. and Graff, Casey A. and Chen, Yang and Smyth, Padhraic and Foufoula-Georgiou, Efi and Randerson, James T.},
+  title   = {Machine learning to predict final fire size at the time of ignition},
+  journal = {International Journal of Wildland Fire},
+  year    = {2019},
+  volume  = {28},
+  number  = {11},
+  pages   = {861--873},
+  doi     = {10.1071/WF19023}
+}
+
+@article{mcwethy2018Landscape,
+  author  = {McWethy, David B. and Pauchard, Anibal and Garcia, Rafael A. and Holz, Andres and Gonzalez, Mauro E. and Veblen, Thomas T. and Stahl, Julian and Currey, Bryce},
+  title   = {Landscape drivers of recent fire activity (2001-2017) in south-central {Chile}},
+  journal = {PLOS ONE},
+  year    = {2018},
+  volume  = {13},
+  number  = {8},
+  pages   = {e0201195},
+  doi     = {10.1371/journal.pone.0201195}
+}
+
+@article{ubeda2016Chile,
+  author  = {Ubeda, Xavier and Sarricolea, Pablo},
+  title   = {Wildfires in {Chile}: A review},
+  journal = {Global and Planetary Change},
+  year    = {2016},
+  volume  = {146},
+  pages   = {152--161},
+  doi     = {10.1016/j.gloplacha.2016.10.004}
+}
+
+@misc{nasaFirmsMODIS,
+  author       = {{NASA LANCE FIRMS}},
+  title        = {{MODIS} active fire data via the Fire Information for Resource Management System ({FIRMS})},
+  year         = {2026},
+  howpublished = {NASA Earthdata},
+  url          = {https://firms.modaps.eosdis.nasa.gov/api/},
+  note         = {Accessed 2026-05-25}
+}</code></pre>
+</section>
+</main>
+</body>
+</html>
