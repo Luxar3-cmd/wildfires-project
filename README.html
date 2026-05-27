@@ -1,1724 +1,537 @@
 <!DOCTYPE html>
-<html lang="es">
+<html xmlns="http://www.w3.org/1999/xhtml" lang xml:lang>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>XAI-project · Predicción de megaincendios en Chile con ML interpretable</title>
-<style>
-  :root {
-    --color-primary: #1e40af;
-    --color-primary-dark: #1e3a8a;
-    --color-accent: #ea580c;
-    --color-fire: #b91c1c;
-    --color-text: #0f172a;
-    --color-text-secondary: #475569;
-    --color-bg: #ffffff;
-    --color-sidebar-bg: #f8fafc;
-    --color-code-bg: #f1f5f9;
-    --color-border: #e2e8f0;
-    --color-border-strong: #cbd5e1;
-    --color-success: #15803d;
-    --color-warning-bg: #fff7ed;
-    --color-warning-border: #fdba74;
-    --color-info-bg: #eff6ff;
-    --color-info-border: #93c5fd;
-    --color-danger-bg: #fef2f2;
-    --color-danger-border: #fca5a5;
-    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-    --font-mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
-  body {
-    margin: 0;
-    font-family: var(--font-body);
-    font-size: 16px;
-    line-height: 1.65;
-    color: var(--color-text);
-    background: var(--color-bg);
-  }
-  .container {
-    display: grid;
-    grid-template-columns: 300px 1fr;
-    gap: 0;
-    max-width: 1400px;
-    margin: 0 auto;
-  }
-  .sidebar {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-    background: var(--color-sidebar-bg);
-    border-right: 1px solid var(--color-border);
-    padding: 1.5rem 1.25rem;
-  }
-  .sidebar h2 {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--color-text-secondary);
-    margin: 0 0 0.75rem 0;
-  }
-  .sidebar h3 {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--color-text-secondary);
-    margin: 1.5rem 0 0.5rem 0;
-  }
-  .sidebar nav ol {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-    counter-reset: toc;
-  }
-  .sidebar nav ol li {
-    counter-increment: toc;
-    margin: 0;
-  }
-  .sidebar nav ol li a {
-    display: block;
-    padding: 0.4rem 0.5rem;
-    color: var(--color-text);
-    text-decoration: none;
-    border-radius: 4px;
-    font-size: 0.9rem;
-    transition: background 0.15s;
-  }
-  .sidebar nav ol li a:hover {
-    background: #e2e8f0;
-    color: var(--color-primary);
-  }
-  .sidebar nav ol li a::before {
-    content: counter(toc) ". ";
-    color: var(--color-text-secondary);
-    font-variant-numeric: tabular-nums;
-    margin-right: 0.25rem;
-  }
-  .sidebar .apend ol li a::before {
-    content: counter(toc, upper-alpha) ". ";
-  }
-  .sidebar .apend ol { counter-reset: toc; }
-  .sidebar .brand {
-    font-weight: 600;
-    color: var(--color-primary);
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 1rem;
-    margin-bottom: 1rem;
-  }
-  .sidebar .brand .subtitle {
-    font-weight: 400;
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-    text-transform: none;
-    letter-spacing: 0;
-    margin-top: 0.25rem;
-  }
-  .content {
-    padding: 3rem 4rem;
-    max-width: 900px;
-  }
-  header.doc-header {
-    margin-bottom: 3rem;
-    padding-bottom: 2rem;
-    border-bottom: 2px solid var(--color-border);
-  }
-  header.doc-header h1 {
-    font-size: 2.25rem;
-    margin: 0 0 0.5rem 0;
-    color: var(--color-primary-dark);
-    line-height: 1.2;
-  }
-  header.doc-header .subtitle {
-    font-size: 1.1rem;
-    color: var(--color-text-secondary);
-    margin: 0;
-  }
-  header.doc-header .meta {
-    margin-top: 1rem;
-    font-size: 0.85rem;
-    color: var(--color-text-secondary);
-  }
-  section { margin-bottom: 4rem; }
-  h2 {
-    font-size: 1.75rem;
-    color: var(--color-primary-dark);
-    margin: 2rem 0 1rem 0;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--color-border);
-  }
-  h3 {
-    font-size: 1.25rem;
-    color: var(--color-primary);
-    margin: 1.5rem 0 0.75rem 0;
-  }
-  h4 {
-    font-size: 1.05rem;
-    color: var(--color-text);
-    margin: 1rem 0 0.5rem 0;
-  }
-  p { margin: 0.75rem 0; }
-  a { color: var(--color-primary); }
-  a:hover { color: var(--color-primary-dark); }
-  ul, ol { padding-left: 1.5rem; }
-  li { margin: 0.25rem 0; }
-  strong { color: var(--color-text); font-weight: 600; }
-  code {
-    background: var(--color-code-bg);
-    padding: 0.1em 0.35em;
-    border-radius: 3px;
-    font-family: var(--font-mono);
-    font-size: 0.9em;
-    color: var(--color-fire);
-  }
-  pre {
-    background: var(--color-code-bg);
-    padding: 1rem 1.25rem;
-    border-radius: 6px;
-    overflow-x: auto;
-    border-left: 3px solid var(--color-primary);
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }
-  pre code {
-    background: transparent;
-    padding: 0;
-    color: var(--color-text);
-    font-size: inherit;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    margin: 1rem 0;
-    font-size: 0.9rem;
-  }
-  thead {
-    background: var(--color-primary);
-    color: white;
-  }
-  thead th {
-    text-align: left;
-    padding: 0.65rem 0.85rem;
-    font-weight: 600;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-  tbody td {
-    padding: 0.55rem 0.85rem;
-    border-bottom: 1px solid var(--color-border);
-  }
-  tbody tr:nth-child(even) { background: #fafbfc; }
-  tbody tr:hover { background: var(--color-info-bg); }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
-  .callout {
-    padding: 1rem 1.25rem;
-    border-radius: 6px;
-    margin: 1.25rem 0;
-    border-left: 4px solid;
-  }
-  .callout-info { background: var(--color-info-bg); border-color: var(--color-info-border); }
-  .callout-warning { background: var(--color-warning-bg); border-color: var(--color-warning-border); }
-  .callout-danger { background: var(--color-danger-bg); border-color: var(--color-danger-border); }
-  .callout-justification { background: #f0f9ff; border-color: var(--color-primary); }
-  .callout-title {
-    font-weight: 600;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.4rem;
-    display: block;
-  }
-  .callout-info .callout-title { color: var(--color-primary-dark); }
-  .callout-warning .callout-title { color: var(--color-accent); }
-  .callout-danger .callout-title { color: var(--color-fire); }
-  .callout-justification .callout-title { color: var(--color-primary-dark); }
-  dl {
-    background: var(--color-sidebar-bg);
-    padding: 1rem 1.25rem;
-    border-radius: 6px;
-    margin: 1rem 0;
-  }
-  dt {
-    font-weight: 600;
-    color: var(--color-primary-dark);
-    margin-top: 0.75rem;
-  }
-  dt:first-child { margin-top: 0; }
-  dd {
-    margin-left: 0;
-    margin-bottom: 0.5rem;
-    color: var(--color-text);
-  }
-  blockquote {
-    border-left: 4px solid var(--color-primary);
-    margin: 1.25rem 0;
-    padding: 0.5rem 1rem;
-    background: var(--color-info-bg);
-    font-style: italic;
-    color: var(--color-text);
-  }
-  blockquote cite {
-    display: block;
-    font-style: normal;
-    font-size: 0.85rem;
-    color: var(--color-text-secondary);
-    margin-top: 0.5rem;
-  }
-  .flow-diagram {
-    background: #fafbfc;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    padding: 1.5rem;
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    line-height: 1.5;
-    white-space: pre;
-    overflow-x: auto;
-    margin: 1.5rem 0;
-  }
-  .references li {
-    margin-bottom: 0.75rem;
-    line-height: 1.5;
-  }
-  .references .ref-num {
-    font-weight: 600;
-    color: var(--color-primary);
-  }
-  .small { font-size: 0.85rem; color: var(--color-text-secondary); }
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-    margin: 1rem 0;
-  }
-  .two-col-card {
-    padding: 1rem 1.25rem;
-    border-radius: 6px;
-  }
-  .two-col-card.allowed {
-    background: #f0fdf4;
-    border-left: 4px solid var(--color-success);
-  }
-  .two-col-card.forbidden {
-    background: var(--color-danger-bg);
-    border-left: 4px solid var(--color-fire);
-  }
-  .two-col-card h4 {
-    margin-top: 0;
-    color: var(--color-text);
-  }
-  .two-col-card .reason {
-    font-size: 0.85rem;
-    color: var(--color-text-secondary);
-    font-style: italic;
-  }
-  .heading-anchor {
-    opacity: 0;
-    margin-left: 0.5rem;
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    font-weight: 400;
-    transition: opacity 0.15s;
-  }
-  h2:hover .heading-anchor, h3:hover .heading-anchor { opacity: 1; }
-  /* Status badges */
-  .badge {
-    display: inline-block;
-    padding: 0.15em 0.55em;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    vertical-align: middle;
-  }
-  .badge-done { background: #dcfce7; color: var(--color-success); }
-  .badge-progress { background: var(--color-warning-bg); color: var(--color-accent); }
-  .badge-pending { background: var(--color-code-bg); color: var(--color-text-secondary); }
-  @media (max-width: 1024px) {
-    .container { grid-template-columns: 1fr; }
-    .sidebar { position: relative; height: auto; max-height: none; }
-    .content { padding: 2rem 1.5rem; }
-    .two-col { grid-template-columns: 1fr; }
-  }
-  @media print {
-    .sidebar { display: none; }
-    .container { display: block; }
-    .content { padding: 0; max-width: none; }
-    body { font-size: 11pt; }
-    h2 { page-break-after: avoid; }
-    pre, table, .callout, .flow-diagram { page-break-inside: avoid; }
-    a { color: black; text-decoration: none; }
-    a::after { content: " (" attr(href) ")"; font-size: 0.7em; color: #555; }
-  }
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>XAI-project · Interpretable Prediction of Mega-Fires in Chile</title>
+  <style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+  <style type="text/css">
+:root {
+--color-primary: #1e40af;
+--color-primary-dark: #1e3a8a;
+--color-accent: #ea580c;
+--color-fire: #b91c1c;
+--color-text: #0f172a;
+--color-text-secondary: #475569;
+--color-bg: #ffffff;
+--color-code-bg: #f1f5f9;
+--color-border: #e2e8f0;
+--color-border-strong: #cbd5e1;
+--font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+--font-mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+body {
+margin: 0 auto;
+max-width: 920px;
+padding: 3rem 1.5rem 6rem;
+font-family: var(--font-body);
+font-size: 16px;
+line-height: 1.65;
+color: var(--color-text);
+background: var(--color-bg);
+}
+
+header#title-block-header { margin-bottom: 2.5rem; }
+header#title-block-header .title {
+font-size: 2rem;
+line-height: 1.2;
+font-weight: 700;
+color: var(--color-primary-dark);
+border-bottom: 4px solid var(--color-fire);
+padding-bottom: 0.75rem;
+margin-bottom: 0;
+}
+
+h1, h2, h3, h4 { line-height: 1.25; font-weight: 700; scroll-margin-top: 1rem; }
+h1 { font-size: 1.7rem; color: var(--color-primary-dark); margin-top: 3rem; }
+h2 {
+font-size: 1.35rem;
+color: var(--color-primary);
+margin-top: 2.5rem;
+padding-bottom: 0.3rem;
+border-bottom: 1px solid var(--color-border);
+}
+h3 { font-size: 1.1rem; color: var(--color-accent); margin-top: 1.75rem; }
+
+hr { border: 0; border-top: 1px solid var(--color-border); margin: 2.5rem 0; }
+
+nav#TOC {
+background: #f8fafc;
+border: 1px solid var(--color-border);
+border-left: 4px solid var(--color-accent);
+border-radius: 6px;
+padding: 1rem 1.25rem;
+margin: 1.5rem 0 2rem;
+font-size: 0.92rem;
+}
+nav#TOC::before {
+content: "Contents";
+display: block;
+font-size: 0.7rem;
+text-transform: uppercase;
+letter-spacing: 0.1em;
+color: var(--color-text-secondary);
+margin-bottom: 0.5rem;
+}
+nav#TOC ul { list-style: none; padding-left: 1rem; margin: 0.2rem 0; }
+nav#TOC > ul { padding-left: 0; }
+nav#TOC a { color: var(--color-text); text-decoration: none; }
+nav#TOC a:hover { color: var(--color-fire); text-decoration: underline; }
+
+a { color: var(--color-primary); }
+a:hover { color: var(--color-fire); }
+
+code {
+font-family: var(--font-mono);
+font-size: 0.875em;
+background: var(--color-code-bg);
+padding: 0.15em 0.4em;
+border-radius: 4px;
+}
+pre {
+background: var(--color-code-bg);
+border: 1px solid var(--color-border);
+border-radius: 8px;
+padding: 1rem 1.25rem;
+overflow-x: auto;
+line-height: 1.5;
+}
+pre code { background: none; padding: 0; font-size: 0.85rem; }
+
+table { border-collapse: collapse; width: 100%; margin: 1.25rem 0; font-size: 0.95rem; }
+th, td { border: 1px solid var(--color-border-strong); padding: 0.5rem 0.75rem; text-align: left; vertical-align: top; }
+thead th { background: var(--color-primary); color: #fff; font-weight: 600; }
+tbody tr:nth-child(even) { background: #f8fafc; }
+
+strong { color: var(--color-text); }
+blockquote {
+margin: 1.25rem 0;
+padding: 0.5rem 1rem;
+border-left: 4px solid var(--color-border-strong);
+color: var(--color-text-secondary);
+background: #f8fafc;
+}
 </style>
 </head>
 <body>
-<div class="container">
-
-<aside class="sidebar">
-  <div class="brand">
-    XAI-project
-    <div class="subtitle">Predicción XAI de megaincendios en Chile</div>
-  </div>
-
-  <h2>Parte I — Contexto</h2>
-  <nav>
-    <ol>
-      <li><a href="#resumen">Resumen ejecutivo</a></li>
-      <li><a href="#pregunta">Pregunta de investigación</a></li>
-      <li><a href="#background">Background y trabajos relacionados</a></li>
-      <li><a href="#datos">Datos</a></li>
-      <li><a href="#metodologia">Metodología</a></li>
-    </ol>
-  </nav>
-
-  <h2>Parte II — Estado operacional</h2>
-  <nav>
-    <ol start="6">
-      <li><a href="#estructura">Estructura del repositorio</a></li>
-      <li><a href="#estado">Estado de implementación</a></li>
-      <li><a href="#reproducibilidad">Reproducibilidad</a></li>
-      <li><a href="#decisiones">Decisiones de diseño registradas</a></li>
-      <li><a href="#roadmap">Roadmap</a></li>
-    </ol>
-  </nav>
-
-  <h2>Cierre</h2>
-  <nav>
-    <ol start="11">
-      <li><a href="#referencias">Referencias</a></li>
-    </ol>
-  </nav>
-
-  <h3>Apéndices</h3>
-  <nav class="apend">
-    <ol>
-      <li><a href="#apend-mapa">Mapa de documentación</a></li>
-      <li><a href="#apend-glosario">Glosario rápido</a></li>
-      <li><a href="#apend-comandos">Comandos disponibles</a></li>
-    </ol>
-  </nav>
-</aside>
-
-<main class="content">
-
-<header class="doc-header">
-  <h1>XAI-project</h1>
-  <p class="subtitle">Predicción de megaincendios en Chile con XGBoost interpretable (SHAP) sobre datos CONAF enriquecidos con ERA5-Land</p>
-  <p class="meta">Documento de referencia del proyecto · Versión de trabajo · Mayo 2026</p>
-  <p class="meta">
-    Documentos complementarios:
-    <a href="docs/megafire_labeling_pipeline.html">docs/megafire_labeling_pipeline.html</a> (pipeline detallado de etiquetado) ·
-    <a href="README.md">README.md</a> (quickstart corto) ·
-    <a href="eda/Propuestas.md">eda/Propuestas.md</a> (justificación de variables ERA5)
-  </p>
+<header id="title-block-header">
+<h1 class="title">XAI-project · Interpretable Prediction of Mega-Fires
+in Chile</h1>
 </header>
-
-<!-- =================== SECCIÓN 1 =================== -->
-<section id="resumen">
-  <h2>1. Resumen ejecutivo <a class="heading-anchor" href="#resumen">#</a></h2>
-
-  <p>
-    Chile enfrentó en la temporada 2016-2017 la peor crisis de incendios forestales de su historia
-    reciente, con más de 570.000 ha quemadas y eventos catastróficos como <em>Las Máquinas</em>
-    (~160.000 ha en la región del Maule). Este proyecto construye un modelo binario de
-    <strong>clasificación de severidad</strong> — incendio normal vs megaincendio — entrenado sobre
-    registros oficiales de CONAF enriquecidos con variables meteorológicas y vegetativas de
-    ERA5-Land al momento de ignición, usando exclusivamente información disponible <em>ex-ante</em>
-    para evitar data leakage. El algoritmo objetivo es <strong>XGBoost</strong> y la explicación
-    de drivers se realiza con <strong>SHAP</strong>.
-  </p>
-
-  <p>
-    El <strong>target objetivo</strong> del proyecto es el label <strong>L2</strong>: criterio
-    físico de <em>Extreme Wildfire Event</em> alineado con el estándar internacional de
-    Tedim et al. 2018, operacionalizado como <code>FLI ≥ 10.000 kW/m</code> y estimado desde
-    Fire Radiative Power (FRP) MODIS vía Wooster et al. 2003. Este es el label sobre el que
-    el paper final reportará resultados y SHAP analysis.
-  </p>
-
-  <p>
-    El pipeline L2 ya está integrado en el ETL mediante NASA FIRMS Area API
-    (<code>MODIS_SP</code>) y produce <code>label_l2</code> junto con
-    <code>fli_estimado_kw_m</code>, <code>modis_n_matches</code> y
-    <code>modis_frp_max_mw</code> cuando existe <code>FIRMS_MAP_KEY</code>. El label
-    <strong>L1b</strong> (P99 regional sobre <code>superficie_quemada_total_ha</code>) queda
-    como proxy secundario para sensitivity analysis, no como target principal.
-  </p>
-
-  <p>
-    El alcance de trabajo queda fijado en la corrida <strong>2012-2018</strong> y el análisis
-    de modelado se concentra en tres regiones CONAF históricas: <strong>Maule</strong>,
-    <strong>Biobío</strong> y <strong>Araucanía</strong>. En este período, <strong>Ñuble</strong>
-    no aparece como región separada en CONAF y queda absorbida dentro de Biobío. La
-    infraestructura ETL es reproducible end-to-end desde Dataverse CONAF, Copernicus CDS y
-    NASA FIRMS.
-  </p>
-
-  <div class="callout callout-info">
-    <span class="callout-title">Casos de uso del modelo</span>
-    <strong>Operacional</strong>: «¿Este fuego que recién partió va a convertirse en uno de los grandes?»
-    — input para asignación de recursos de combate.<br>
-    <strong>Interpretativo (XAI / SHAP)</strong>: «¿Qué condiciones climáticas, vegetativas y
-    geográficas predisponen a megaincendio?» — input para política pública y prevención.
-  </div>
-</section>
-
-<!-- =================== SECCIÓN 2 =================== -->
-<section id="pregunta">
-  <h2>2. Pregunta de investigación y motivación <a class="heading-anchor" href="#pregunta">#</a></h2>
-
-  <h3>2.1 Contexto regional: Chile y los megaincendios</h3>
-  <p>
-    El régimen de incendios en Chile cambió cualitativamente en los 2010s. La temporada 2016-2017
-    superó toda la serie histórica reciente: la región del Maule acumuló por sí sola más de
-    300.000 ha quemadas, O'Higgins triplicó su promedio histórico, y el evento de Las Máquinas
-    estableció un máximo de ~160.000 ha en un solo incendio. Este salto cualitativo motiva la
-    pregunta científica central: <em>¿qué condiciones físicas predicen, en el momento de ignición,
-    que un fuego se convertirá en un evento catastrófico?</em>
-  </p>
-
-  <p>
-    La pregunta no es de detección (¿hay fuego sí/no?) sino de <strong>severidad condicional</strong>:
-    dado que ya hay un fuego, ¿qué condiciones del momento determinan si escalará o será
-    contenido? Esto desplaza el peso explicativo desde variables de ignición hacia variables de
-    propagación (VPD, viento, sequía acumulada, carga combustible).
-  </p>
-
-  <h3>2.2 Dos preguntas operacionales</h3>
-  <p>El modelo responde a dos preguntas con audiencias distintas:</p>
-  <ol>
-    <li><strong>Operacional (predicción ex-ante)</strong>: dado un fuego recién detectado en
-        latitud/longitud (lat,lon) en el instante <em>t</em>, ¿cuál es la probabilidad de que su
-        comportamiento físico alcance el régimen de <em>Extreme Wildfire Event</em>
-        (FLI ≥ 10.000 kW/m, categoría 5+ de Tedim 2018)? Output: probabilidad usable para
-        priorizar recursos de combate y declarar alerta operacional.</li>
-    <li><strong>Interpretativo (XAI)</strong>: ¿qué features explican las predicciones positivas?
-        ¿qué combinaciones de variables meteorológicas y vegetativas constituyen el «régimen
-        de riesgo extremo» en Chile? Output: ranking de drivers + análisis SHAP local y global.</li>
-  </ol>
-
-  <div class="callout callout-info">
-    <span class="callout-title">Label proxy secundario</span>
-    <strong>L1b</strong> responde la pregunta auxiliar «¿la superficie final superará el P99
-    regional?». Esta formulación proxy es útil para sensitivity analysis: la severidad física
-    (FLI) y la superficie quemada están correlacionadas, pero no son equivalentes.
-  </div>
-
-  <h3>2.3 Por qué clasificación binaria y no regresión</h3>
-  <p>
-    Se descartó predecir directamente <code>superficie_quemada_total_ha</code> (regresión) por
-    razones estadísticas y operacionales:
-  </p>
-  <ul>
-    <li>La distribución es marcadamente <strong>power-law</strong> con mediana 0.45 ha y máximo
-        159.813 ha. Una pérdida MSE estaría dominada por errores en los pocos eventos extremos,
-        con varianza explicada engañosa.</li>
-    <li>La decisión operacional de asignación de recursos es binaria: enviar la brigada A
-        («fuego que probablemente escala») o la brigada B («fuego rutinario»). La probabilidad
-        de clase es directamente accionable; la estimación continua de hectáreas no lo es.</li>
-    <li>El análisis SHAP es más interpretable sobre probabilidades de clase que sobre predicciones
-        continuas de magnitudes que cubren cinco órdenes de magnitud.</li>
-  </ul>
-
-  <h3>2.4 Hipótesis de trabajo</h3>
-  <p>Basadas en literatura (ver <a href="#background">§3</a>):</p>
-  <ul>
-    <li><strong>H1</strong>: VPD al momento de ignición es el predictor individual más fuerte
-        (Coffield et al. 2019).</li>
-    <li><strong>H2</strong>: la combinación VPD × wind_speed × humedad de suelo (swvl) captura el
-        régimen sinóptico de día catastrófico mejor que cada variable por separado — SHAP debería
-        mostrar interacciones fuertes.</li>
-    <li><strong>H3</strong>: los drivers difieren entre Maule, Biobío y Araucanía; leave-one-region-out
-        permite separar señal regional robusta de patrones locales.</li>
-  </ul>
-</section>
-
-<!-- =================== SECCIÓN 3 =================== -->
-<section id="background">
-  <h2>3. Background y trabajos relacionados <a class="heading-anchor" href="#background">#</a></h2>
-
-  <h3>3.1 Fundamentos de fire science</h3>
-  <p>
-    El comportamiento de un incendio forestal se caracteriza por cuatro magnitudes físicas
-    primarias, reproducidas en detalle en el documento técnico de etiquetado
-    (<a href="docs/megafire_labeling_pipeline.html#glosario">megafire_labeling_pipeline.html §2</a>):
-  </p>
-  <dl>
-    <dt>FLI (Fire Line Intensity, kW/m)</dt>
-    <dd>Energía liberada por unidad de longitud del frente de fuego por unidad de tiempo. Fórmula
-        de Byram (1959): <code>FLI = H · w · R</code> donde H es contenido calórico del
-        combustible (~18.000 kJ/kg para vegetación seca), w es masa de combustible consumida
-        por unidad de área (kg/m²) y R es la velocidad de propagación (m/s).</dd>
-    <dt>ROS (Rate of Spread, m/min)</dt>
-    <dd>Velocidad del frente del fuego. Modelado clásicamente por Rothermel (1972) en función de
-        carga combustible, humedad, pendiente y viento.</dd>
-    <dt>FL (Flame Length, m)</dt>
-    <dd>Largo de la llama medido desde la base. Conversión a FLI: Alexander (1982),
-        <code>FLI = 259.83 · FL^2.174</code>.</dd>
-    <dt>FRP (Fire Radiative Power, MW)</dt>
-    <dd>Potencia radiativa total emitida por el fuego, medible desde satélite. Wooster et al.
-        (2003) propusieron la conversión FRP→FLI vía fracción radiante (típicamente 0.13-0.20).</dd>
-  </dl>
-
-  <p>
-    En la literatura operacional, los <strong>satélites MODIS</strong> (Terra desde 2000, Aqua desde
-    2002) son la fuente primaria de FRP. Los productos MOD14/MYD14 detectan píxeles de fuego activo
-    a resolución ~1 km, con sensibilidad típica para fuegos &gt;50 ha. Esta limitación define el
-    universo de eventos que pueden ser etiquetados con L2 (ver <a href="#metodologia">§5</a>).
-  </p>
-
-  <h3>3.2 Definición internacional de extreme wildfire events</h3>
-  <p>
-    Tedim, Leone et al. (2018) <span class="ref-num">[1]</span> publicaron en
-    <em>Fire</em> (MDPI) un concept paper que se ha vuelto referencia internacional para definir
-    un <strong>Extreme Wildfire Event (EWE)</strong>. El paper rechaza explícitamente las
-    definiciones basadas únicamente en superficie quemada — argumentan que «mega» o «grande» son
-    términos relativos al régimen local y no capturan el <em>comportamiento físico</em> del fuego.
-    En su lugar proponen una clasificación de siete categorías con thresholds operacionales sobre
-    FLI, ROS, FL y comportamiento extremo (spotting, pyrocumulonimbus, eruptive behavior):
-  </p>
-
-  <table>
-    <thead>
-      <tr><th>Categoría</th><th>FLI (kW/m)</th><th>FL (m)</th><th>ROS (m/min)</th><th>Comportamiento</th></tr>
-    </thead>
-    <tbody>
-      <tr><td>1</td><td class="num">&lt; 500</td><td class="num">&lt; 1.5</td><td class="num">&lt; 5</td><td>Combate manual directo</td></tr>
-      <tr><td>2</td><td class="num">500–2.000</td><td class="num">1.5–2.5</td><td class="num">5–15</td><td>Maquinaria + manual</td></tr>
-      <tr><td>3</td><td class="num">2.000–4.000</td><td class="num">2.5–3.5</td><td class="num">15–30</td><td>Maquinaria pesada + aérea</td></tr>
-      <tr><td>4</td><td class="num">4.000–10.000</td><td class="num">3.5–10</td><td class="num">30–50</td><td>Solo aérea + ataque flanco</td></tr>
-      <tr><td>5 (EWE)</td><td class="num">10.000–30.000</td><td class="num">10–50</td><td class="num">&gt; 50</td><td>Spotting &gt; 1 km, EFB</td></tr>
-      <tr><td>6 (EWE)</td><td class="num">30.000–100.000</td><td class="num">&gt; 50</td><td class="num">&gt;&gt; 50</td><td>PyroCb desarrollado</td></tr>
-      <tr><td>7 (EWE)</td><td class="num">&gt; 100.000</td><td>n/a</td><td>n/a</td><td>Tornado de fuego</td></tr>
-    </tbody>
-  </table>
-
-  <p>
-    El umbral operacional EWE es <strong>FLI ≥ 10.000 kW/m</strong>. Las Máquinas (2017) tuvo FLI
-    estimado &gt;60.000 kW/m según reportes posteriores, lo que lo califica como categoría 6
-    (PyroCb), uno de los pocos eventos en Sudamérica documentados en esa categoría.
-  </p>
-
-  <h3>3.3 ERA5-Land en fire risk modeling</h3>
-  <p>
-    <strong>ERA5-Land</strong> (Muñoz-Sabater 2019 <span class="ref-num">[2]</span>) es el
-    reanálisis climático del Centro Europeo de Pronósticos de Plazo Medio (ECMWF), con resolución
-    espacial de ~9 km y temporal horaria, disponible desde 1950 y actualizado a tiempo cuasi-real.
-    Su catálogo expone aproximadamente 7.700 variables, lo que obliga a una selección informada por
-    literatura.
-  </p>
-
-  <p>
-    Dos trabajos recientes guían la elección de features ERA5 para fire prediction con XAI:
-  </p>
-
-  <blockquote>
-    Zakari, Malik &amp; Ong (2025) <span class="ref-num">[3]</span> entrenan modelos de deep
-    learning con XAI para forecasting espacio-temporal de incendios en Australia. Usan
-    temperatura, dewpoint, viento, precipitación, humedad de suelo (4 capas), radiación solar
-    e índices vegetativos (LAI). SHAP identifica VPD efectivo y humedad de suelo en la capa
-    superior como predictores dominantes.
-    <cite>Spatio-temporal wildfire forecasting in Australia using deep learning and explainable
-    AI. <em>Modeling Earth Systems and Environment</em>, 11, 425.</cite>
-  </blockquote>
-
-  <blockquote>
-    Liao, Zhou, Liu, Li &amp; Zhang (2025) <span class="ref-num">[4]</span> combinan XGBoost
-    con SHAP para predicción de incendios en China. Reportan que la interacción
-    temperatura × humedad relativa supera a cualquier variable individual, y que los modelos
-    XGBoost+SHAP son competitivos con deep learning en performance pero superiores en
-    interpretabilidad operacional.
-    <cite>Tackling the wildfire prediction challenge: An XAI model combining XGBoost with
-    SHAP for enhanced interpretability and accuracy. <em>Forests</em>, 16(4), 689.</cite>
-  </blockquote>
-
-  <p>
-    Este proyecto adopta una <strong>intersección informada</strong> de las variables ERA5
-    usadas en ambos estudios, complementada con dos derivadas que la literatura subraya como
-    críticas: humedad relativa (Magnus) y déficit de presión de vapor (VPD). Detalle en
-    <a href="eda/Propuestas.md">eda/Propuestas.md</a>.
-  </p>
-
-  <h3>3.4 VPD como predictor dominante</h3>
-  <p>
-    Coffield et al. (2019) <span class="ref-num">[5]</span> mostraron en bosques boreales y
-    templados que el <strong>déficit de presión de vapor (VPD)</strong> es el predictor individual
-    más potente para discriminar el tamaño final de un incendio. El VPD integra temperatura y
-    humedad en un único índice de estrés hídrico atmosférico:
-  </p>
-
-  <pre><code>def vpd(t_celsius: float, td_celsius: float) -> float:
-    """VPD en kPa. Fórmula de Tetens con coeficientes de Murray (1967)."""
-    import numpy as np
-    es = 0.6108 * np.exp(17.27 * t_celsius / (t_celsius + 237.3))
-    ea = 0.6108 * np.exp(17.27 * td_celsius / (td_celsius + 237.3))
-    return es - ea</code></pre>
-
-  <p>
-    En el VPD se condensa el «régimen de viento bajo + temperatura alta + humedad baja» que
-    caracteriza los días catastróficos. Es esperable que SHAP identifique VPD como driver top en
-    el modelo final. El pipeline incluye VPD como feature derivada en
-    <code>src/derived_features.py</code>.
-  </p>
-
-  <h3>3.5 Gap identificado</h3>
-  <p>
-    La revisión preliminar identifica dos vacíos en la literatura que este proyecto puede aportar:
-  </p>
-  <ul>
-    <li><strong>Cobertura geográfica</strong>: los estudios XAI publicados en 2024-2025 cubren
-        Australia, China, EE.UU. y Mediterráneo europeo, pero el <em>Chile mediterráneo</em> está
-        ausente. Chile tiene un régimen climático único — Mediterráneo continental con verano
-        seco extremo, gradiente latitudinal de 4000 km, plantaciones forestales extensas
-        (pino radiata, eucalipto) — que justifica un estudio específico.</li>
-    <li><strong>Granularidad temporal</strong>: la mayoría de trabajos usan agregados diarios o
-        celdas grid. El dataset CONAF provee <em>fecha y hora de inicio</em> de cada incendio
-        individual, permitiendo match horario con ERA5-Land en lugar de promedios diarios.
-        Esto puede capturar el peak diurno de VPD y viento de manera más fina.</li>
-  </ul>
-</section>
-
-<!-- =================== SECCIÓN 4 =================== -->
-<section id="datos">
-  <h2>4. Datos <a class="heading-anchor" href="#datos">#</a></h2>
-
-  <h3>4.1 CONAF — registro oficial de incendios forestales</h3>
-  <p>
-    La <strong>Corporación Nacional Forestal (CONAF)</strong> mantiene el registro oficial de
-    todos los incendios forestales atendidos en Chile. El dataset se accede vía la plataforma
-    <em>Datos para Resiliencia ante Desastres</em> de itrend
-    (<a href="https://datospararesiliencia.cl">datospararesiliencia.cl</a>), DOI
-    <a href="https://doi.org/10.71578/UXAUN5"><code>10.71578/UXAUN5</code></a>, en formato CSV
-    + GeoJSON por temporada (18 temporadas, 2002-2003 a 2019-2020), totalizando 109.947 eventos
-    georreferenciados.
-  </p>
-
-  <p>
-    El módulo <code>src/conaf_loader.py</code> descarga vía API Dataverse, concatena los CSVs
-    estacionales, slugifica nombres a snake_case ASCII, parsea fechas, deriva
-    <code>fecha_hora_inicio_utc</code> con timezone Chile→UTC, y deduplica. Output:
-    <code>data/interim/conaf_clean.parquet</code> con <strong>28 columnas</strong> (100% non-null
-    salvo 6 NaN en UTC por DST ambiguity):
-  </p>
-
-  <table>
-    <thead><tr><th>Grupo</th><th>Columnas</th></tr></thead>
-    <tbody>
-      <tr><td>Identificación (5)</td><td><code>region</code>, <code>provincia</code>, <code>comuna</code>, <code>temporada</code>, <code>nombre</code></td></tr>
-      <tr><td>Temporales (4)</td><td><code>fecha</code>, <code>hora_inicio</code>, <code>fecha_hora_inicio</code>, <code>fecha_hora_inicio_utc</code></td></tr>
-      <tr><td>Operacionales (4)</td><td><code>duracion_minutos</code>, <code>alerta</code>, <code>escenario</code>, <code>causa</code></td></tr>
-      <tr><td>Geográficas (4)</td><td><code>latitud</code>, <code>longitud</code>, <code>datum</code>, <code>geometry</code></td></tr>
-      <tr><td>Superficies por combustible (11)</td><td><code>superficie_quemada_pino_a_ha</code>, <code>pino_b_ha</code>, <code>pino_c_ha</code>, <code>eucalipto_ha</code>, <code>otras_plantas_ha</code>, <code>arbolado_ha</code>, <code>matorral_ha</code>, <code>pastizal_ha</code>, <code>agricola_ha</code>, <code>desechos_ha</code>, <code>total_ha</code></td></tr>
-    </tbody>
-  </table>
-
-  <p>
-    Las variables <code>alerta</code>, <code>escenario</code>, <code>duracion_minutos</code> y las
-    <code>superficie_quemada_*</code> son <em>ex-post</em> y deben excluirse del feature set
-    (ver <a href="#metodologia">§5.3</a>).
-  </p>
-
-  <h3>4.2 ERA5-Land — reanálisis climático</h3>
-  <p>
-    El módulo <code>src/era5_downloader.py</code> consulta la Climate Data Store (CDS) de
-    Copernicus solicitando NetCDF mensuales para el bounding box que cubre las regiones de
-    estudio: <code>CHILE_BBOX = {north: -34.0, west: -74.0, south: -42.0, east: -70.0}</code>.
-    Para Maule, Biobío y Araucanía en 2012-2018, este bbox cubre el 100% de los eventos
-    georreferenciados. Para cada mes se solicitan <strong>19 variables</strong> horarias y
-    <strong>6 invariantes estáticas</strong>:
-  </p>
-
-  <div class="two-col">
-    <div class="two-col-card allowed">
-      <h4>19 variables horarias ERA5-Land</h4>
-      <ul>
-        <li><strong>Temperatura</strong>: <code>t2m</code> (2m air), <code>d2m</code> (2m dewpoint)</li>
-        <li><strong>Viento</strong>: <code>u10</code>, <code>v10</code> (componentes a 10 m)</li>
-        <li><strong>Precipitación</strong>: <code>tp</code> (total precipitation)</li>
-        <li><strong>Radiación</strong>: <code>ssrd</code> (surface solar radiation downwards)</li>
-        <li><strong>Humedad suelo</strong>: <code>swvl1-4</code> (4 capas: 0-7, 7-28, 28-100, 100-289 cm)</li>
-        <li><strong>Temperatura suelo</strong>: <code>stl1-4</code> (mismas 4 capas)</li>
-        <li><strong>Evaporación</strong>: <code>pev</code> (potential), <code>e</code> (total),
-            <code>evavt</code> (from vegetation transpiration)</li>
-        <li><strong>Índices foliares</strong>: <code>lai_hv</code>, <code>lai_lv</code></li>
-      </ul>
-    </div>
-    <div class="two-col-card allowed">
-      <h4>6 invariantes (descargadas 1×)</h4>
-      <ul>
-        <li><strong>Vegetación</strong>: <code>cvh</code>, <code>cvl</code> (cover high/low),
-            <code>tvh</code>, <code>tvl</code> (type high/low)</li>
-        <li><strong>Tipo de suelo</strong>: <code>slt</code></li>
-        <li><strong>Máscara tierra/mar</strong>: <code>lsm</code></li>
-      </ul>
-    </div>
-  </div>
-
-  <p>
-    Las invariantes se descargan una sola vez y se broadcastan al matching. La totalidad ocupa
-    <strong>132 NetCDF mensuales</strong> en <code>data/raw/era5/</code> (julio 2002 – junio 2020,
-    cobertura para el roadmap completo).
-  </p>
-
-  <h3>4.3 Variables derivadas</h3>
-  <p>
-    El módulo <code>src/derived_features.py</code> calcula a partir de las variables horarias
-    ERA5 once features adicionales que la literatura subraya como críticas:
-  </p>
-
-  <table>
-    <thead><tr><th>Variable</th><th>Fórmula</th><th>Unidad</th></tr></thead>
-    <tbody>
-      <tr><td><code>t2m_celsius</code>, <code>d2m_celsius</code></td><td>K − 273.15</td><td>°C</td></tr>
-      <tr><td><code>stl1-4_celsius</code> (4)</td><td>K − 273.15</td><td>°C</td></tr>
-      <tr><td><code>tp_mm</code></td><td>tp × 1000</td><td>mm</td></tr>
-      <tr><td><code>relative_humidity</code></td><td>100 · (e<sub>a</sub>(Td) / e<sub>s</sub>(T)) — Magnus/Tetens</td><td>%</td></tr>
-      <tr><td><code>vpd_hpa</code></td><td>(e<sub>s</sub>(T) − e<sub>a</sub>(Td)) · 10</td><td>hPa</td></tr>
-      <tr><td><code>wind_speed</code></td><td>√(u10² + v10²)</td><td>m/s</td></tr>
-      <tr><td><code>wind_direction</code></td><td>atan2(−u10, −v10) · 180/π</td><td>° desde N</td></tr>
-    </tbody>
-  </table>
-
-  <h3>4.4 Enriquecimiento espacio-temporal</h3>
-  <p>
-    El módulo <code>src/enrichment.py</code> realiza el join CONAF × ERA5 evento por evento.
-    Para cada incendio CONAF con <code>(latitud, longitud, fecha_hora_inicio_utc)</code>:
-  </p>
-  <ol>
-    <li><strong>Spatial join</strong>: identificar el píxel ERA5-Land más cercano (nearest-grid)
-        — la resolución de ~9 km hace que la diferencia con interpolación bilinear sea pequeña
-        para variables horarias suavizadas.</li>
-    <li><strong>Temporal join</strong>: tomar el snapshot ERA5 en la hora más cercana a
-        <code>fecha_hora_inicio_utc</code> (±30 minutos).</li>
-    <li><strong>Quality metadata</strong>: registrar la distancia espacial al píxel
-        (<code>era5_dist_km</code>), el offset temporal (<code>era5_dt_hours</code>) y un score
-        compuesto (<code>era5_match_quality</code>) — útil para filtrar matches degradados pero
-        <strong>no</strong> como features de modelado.</li>
-  </ol>
-
-  <h3>4.5 Dataset enriquecido actual</h3>
-  <p>
-    El output objetivo de la corrida es <code>data/processed/conaf_enriched_2012_2018.parquet</code>
-    y su copia <code>data/processed/conaf_enriched_latest.parquet</code>. La base CONAF
-    verificada para 2012-2018 tiene 42.963 eventos; el subset analítico Maule–Biobío–Araucanía
-    tiene 29.510 eventos:
-  </p>
-
-  <table>
-    <thead><tr><th>Atributo</th><th>Valor</th></tr></thead>
-    <tbody>
-      <tr><td>Run base</td><td class="num">42.963 eventos CONAF (2012-2018)</td></tr>
-      <tr><td>Subset analítico</td><td class="num">29.510 eventos</td></tr>
-      <tr><td>Regiones del estudio</td><td>Maule (4.703), Biobío (17.717), Araucanía (7.090)</td></tr>
-      <tr><td>Ñuble</td><td>No aparece separado en CONAF 2012-2018; queda dentro de Biobío histórico</td></tr>
-      <tr><td>Columnas esperadas con L2</td><td class="num">70</td></tr>
-      <tr><td>Desglose esperado</td><td>27 CONAF + 19 ERA5 crudas + 11 derivadas + 6 invariantes + 3 metadatos ERA5 + 4 MODIS/L2</td></tr>
-      <tr><td>Mediana superficie subset</td><td class="num">0.30 ha</td></tr>
-      <tr><td>P99 superficie subset</td><td class="num">148.3 ha</td></tr>
-      <tr><td>Máximo superficie</td><td class="num">159.813 ha (Las Máquinas, Maule 2017)</td></tr>
-      <tr><td>Suma total quemada subset</td><td class="num">625.098 ha</td></tr>
-    </tbody>
-  </table>
-
-  <div class="callout callout-warning">
-    <span class="callout-title">Estado de verificación</span>
-    Los conteos anteriores provienen de CONAF limpio filtrado a 2012-2018. Las métricas finales
-    de <code>label_l2</code> y <code>era5_match_quality</code> deben leerse del parquet enriquecido
-    2012-2018 una vez terminada la corrida completa.
-  </div>
-</section>
-
-<!-- =================== SECCIÓN 5 =================== -->
-<section id="metodologia">
-  <h2>5. Metodología <a class="heading-anchor" href="#metodologia">#</a></h2>
-
-  <h3>5.1 Etiquetado L2 — FLI desde MODIS-FRP (target objetivo)</h3>
-  <p>
-    El <strong>target objetivo</strong> del proyecto es L2, alineado con el estándar internacional
-    Tedim et al. 2018: <code>label_l2 = 1 ⇔ FLI ≥ 10.000 kW/m</code>. Esto corresponde a la
-    categoría 5+ del paper (<em>Extreme Wildfire Event</em>) y captura comportamiento físico,
-    no solo magnitud final. FLI no es medible in situ a posteriori, pero puede estimarse desde
-    Fire Radiative Power (FRP) MODIS según Wooster et al. 2003 <span class="ref-num">[6]</span>:
-  </p>
-
-  <pre><code>def frp_to_fli(frp_mw: float,
-               fire_front_length_m: float,
-               radiant_fraction: float = 0.17) -> float:
-    """FLI [kW/m] ≈ (FRP [MW] · 1000 / radiant_fraction) / front_length [m]"""
-    return (frp_mw * 1000 / radiant_fraction) / fire_front_length_m</code></pre>
-
-  <p>
-    La estimación requiere asumir un largo de frente (proxy desde el radio de un equivalente
-    circular del área quemada) y una fracción radiante (0.13-0.20 según vegetación). El pipeline
-    L2 detallado está documentado en
-    <a href="docs/megafire_labeling_pipeline.html#pipeline">megafire_labeling_pipeline.html §6</a>.
-  </p>
-
-  <div class="callout callout-justification">
-    <span class="callout-title">Por qué L2 es el target objetivo</span>
-    <ul>
-      <li><strong>Alineamiento con estándar internacional</strong>: Tedim et al. 2018 es la
-          referencia metodológica que la comunidad de fire science ha consolidado para definir
-          extreme wildfire events. El paper rechaza explícitamente las definiciones basadas en
-          superficie quemada por ser dependientes del régimen local.</li>
-      <li><strong>Captura comportamiento físico</strong>: FLI integra contenido calórico, masa
-          de combustible y velocidad de propagación. Predecir FLI es predecir el comportamiento
-          peligroso, no solo el outcome.</li>
-      <li><strong>Inmune al sesgo del período</strong>: la temporada 2016-2017 distorsiona los
-          P99 de hectáreas en la zona central. FLI desde FRP se mide al momento del fuego,
-          no se calibra estadísticamente sobre la temporada.</li>
-      <li><strong>Reportable internacionalmente</strong>: el paper final puede comparar drivers
-          de EWE en Chile con los reportados en Australia (Zakari 2025), Mediterráneo europeo
-          (Tedim 2018), o China (Liao 2025).</li>
-    </ul>
-  </div>
-
-  <p>
-    <strong>Estado actual</strong>: L2 está implementado en <code>src/modis.py</code> con
-    NASA FIRMS Area API. El paso se ejecuta dentro de <code>scripts/preprocess.py</code> salvo
-    que se use <code>--skip-modis</code>; si falta <code>FIRMS_MAP_KEY</code>, el pipeline
-    continúa sin <code>label_l2</code>.
-  </p>
-
-  <h3>5.2 Etiquetado L1b — P99 regional (proxy secundario + sensitivity analysis)</h3>
-  <p>
-    <strong>L1b</strong> queda como <em>proxy secundario</em>: threshold estadístico P99 regional
-    sobre <code>superficie_quemada_total_ha</code>. La estrategia es el percentil 99 calculado
-    por separado en cada región sobre eventos positivos —
-    un umbral global único (e.g., 200 ha siguiendo Lannom et al. 2014) ignoraría la heterogeneidad
-    entre Maule, Biobío y Araucanía.
-  </p>
-
-  <p>L1b cumple un rol secundario:</p>
-  <ol>
-    <li><strong>Análisis de sensibilidad en el paper</strong>: ¿qué drivers cambian si el target
-        es un proxy estadístico (top 1% en hectáreas) vs el criterio físico de EWE? Drivers
-        que aparecen en ambos modelos son señales robustas; drivers que solo aparecen en uno
-        son artefactos del label.</li>
-  </ol>
-
-  <p>El script <code>scripts/megafire_thresholds.py</code> compara cuatro métodos para fijar el threshold:</p>
-  <ol>
-    <li><strong>Percentil</strong>: P95, P98, P99 sobre eventos con superficie &gt; 0.</li>
-    <li><strong>Log-normal</strong>: ajuste MLE de log(ha), threshold en exp(μ + k·σ) con k ∈ {2, 2.5, 3}.</li>
-    <li><strong>Pareto-80%</strong>: umbral mínimo donde el 20% superior acumula 80% del área.</li>
-    <li><strong>Benchmarks de literatura</strong>: percentil empírico donde caen 200 / 500 / 1000 ha.</li>
-  </ol>
-
-  <p>
-    P99 regional se eligió como threshold por (a) preserva el significado semántico de «mega» =
-    top 1% de severidad, (b) produce ~1% de positivos en el subset, un imbalance manejable con
-    <code>scale_pos_weight</code> en XGBoost, y (c) regionaliza por bioma. Detalle
-    completo en
-    <a href="docs/megafire_labeling_pipeline.html#estrategia">megafire_labeling_pipeline.html §5</a>.
-  </p>
-
-  <p>
-    El output <code>data/processed/megafire_thresholds.md</code> contiene la tabla completa por
-    región. En el subset 2012-2018 de tres regiones, los P99 son Biobío 89.2 ha,
-    Maule 204.0 ha y Araucanía 250.3 ha.
-  </p>
-
-  <div class="callout callout-warning">
-    <span class="callout-title">Limitaciones de L1b como proxy</span>
-    Superficie quemada y FLI están correlacionadas pero no son equivalentes. Un fuego de 200 ha
-    en bosque seco con viento extremo (alto FLI) y un fuego de 200 ha en pastizal con propagación
-    lenta (bajo FLI) reciben el mismo label L1b, pero solo el primero es EWE según Tedim. El paper
-    debe documentar esta limitación explícitamente.
-  </div>
-
-  <h3>5.3 Anti-leakage: features permitidas vs prohibidas</h3>
-  <p>
-    El modelo predice <strong>en el momento de ignición</strong>, por lo que solo puede usar
-    variables medibles antes o exactamente al inicio del fuego. Toda información generada por el
-    fuego mismo introduce data leakage. Resumen:
-  </p>
-
-  <div class="two-col">
-    <div class="two-col-card allowed">
-      <h4>✓ Permitidas (no leakage)</h4>
-      <ul>
-        <li><strong>ERA5 at-ignition</strong>: t2m, d2m, relative_humidity, vpd_hpa, wind_speed,
-            wind_direction, swvl1-4, tp_mm, ssrd, stl1-4_celsius, pev, e, evavt</li>
-        <li><strong>Geográficas</strong>: latitud, longitud</li>
-        <li><strong>Estacionales</strong> (derivadas de fecha_hora_inicio): mes, hora, día_semana</li>
-        <li><strong>Vegetativas</strong>: lai_hv, lai_lv, cvh, cvl, tvh, tvl, slt</li>
-      </ul>
-    </div>
-    <div class="two-col-card forbidden">
-      <h4>✗ Prohibidas (leakage)</h4>
-      <ul>
-        <li><code>duracion_minutos</code> — se conoce cuando termina el fuego</li>
-        <li><code>superficie_quemada_*_ha</code> — base del target</li>
-        <li><code>alerta</code> — declarada tras evaluación, no antes</li>
-        <li><code>escenario</code> — codificado ex-post por CONAF</li>
-        <li>Metadatos de matching: <code>era5_dist_km</code>, <code>era5_dt_hours</code>,
-            <code>era5_match_quality</code> (calidad técnica, no señal física)</li>
-      </ul>
-    </div>
-  </div>
-
-  <h3>5.4 Modelado: XGBoost + SHAP (dos modelos paralelos)</h3>
-  <p>
-    Algoritmo: <strong>XGBoost</strong> (gradient boosting sobre árboles). Justificación: (a) maneja
-    bien features mixtas continuas + categóricas + missing, (b) tiene mecanismos nativos para
-    class imbalance (<code>scale_pos_weight</code>), (c) la implementación de SHAP TreeExplainer
-    es exacta y O(TLD²) en árboles, mucho más rápida que aproximaciones para deep learning,
-    (d) literatura reciente (Liao et al. 2025) lo muestra competitivo con DL en performance pero
-    superior en interpretabilidad.
-  </p>
-
-  <p>
-    <strong>Dos modelos entrenados en paralelo</strong>, uno por cada label, con la misma
-    arquitectura y features:
-  </p>
-  <ol>
-    <li><strong>Modelo XGB-L2</strong> (resultado principal del paper): target = label_l2,
-        SHAP analysis sobre EWE alineado con Tedim 2018.</li>
-    <li><strong>Modelo XGB-L1b</strong> (análisis de sensibilidad): target = label_l1b,
-        SHAP analysis sobre proxy estadístico P99 regional.</li>
-  </ol>
-  <p>
-    La comparación entre ambos SHAP es la <em>contribución metodológica</em> del paper:
-    drivers consistentes son robustos al criterio de severidad; drivers que aparecen solo en
-    uno son específicos del label. Hipótesis informada: VPD, wind_speed y swvl1 deberían
-    aparecer en ambos como top drivers (señal física genuina), mientras que features
-    geográficas o estacionales podrían pesar diferente.
-  </p>
-
-  <p>
-    <strong>Class imbalance</strong>: con L1b sobre 29.510 eventos, el proxy queda cercano a
-    1% de positivos por construcción. Con L2 se debe usar el conteo real de
-    <code>label_l2</code> del parquet 2012-2018. Mitigación:
-  </p>
-  <ul>
-    <li><code>scale_pos_weight = n_neg / n_pos</code> como baseline.</li>
-    <li>Alternativa: focal loss (custom objective) si los positivos resultan heterogéneos.</li>
-    <li><strong>No usar SMOTE</strong>: sintetizar megaincendios artificiales viola la naturaleza
-        espacio-temporal del problema.</li>
-  </ul>
-
-  <p><strong>Métricas de evaluación</strong>: con este imbalance, no usar accuracy. Usar:</p>
-  <ul>
-    <li><strong>PR-AUC</strong>: más sensible al imbalance que ROC-AUC.</li>
-    <li><strong>F1 macro</strong>: promedio balanceado.</li>
-    <li><strong>Recall a precisión fija</strong> (e.g., recall@precision=0.5): pregunta
-        operacional directa.</li>
-  </ul>
-
-  <p>
-    <strong>SHAP</strong>: TreeExplainer sobre el modelo entrenado. Análisis previsto:
-    (a) ranking global de features por |SHAP value| medio, (b) dependence plots para
-    top features (esperable: VPD, wind_speed, swvl1, t2m), (c) interaction plots para
-    combinaciones VPD × wind_speed, (d) explicaciones locales para eventos extremos
-    individuales (e.g., Las Máquinas) para validar coherencia física.
-  </p>
-
-  <h3>5.5 Validación: train/test split</h3>
-  <p>
-    <strong>No usar split aleatorio</strong> como evaluación principal: los incendios tienen
-    correlación temporal y espacial, y el evento de enero-febrero 2017 puede contaminar train/test
-    si se reparte aleatoriamente.
-  </p>
-
-  <ul>
-    <li><strong>Split temporal</strong>: entrenar con 2012-2017 y testear en 2018.</li>
-    <li><strong>Cross-validation espacial</strong>: leave-one-region-out entre Maule, Biobío
-        y Araucanía para evaluar generalización regional.</li>
-    <li><strong>Validación de estrés</strong>: revisar desempeño específico en enero-febrero 2017,
-        donde se concentran eventos extremos como Las Máquinas.</li>
-  </ul>
-</section>
-
-<!-- =================== SECCIÓN 6 =================== -->
-<section id="estructura">
-  <h2>6. Estructura del repositorio <a class="heading-anchor" href="#estructura">#</a></h2>
-
-  <pre class="flow-diagram">XAI-project/
-├── src/                              # módulos reutilizables (2.212 LOC, 11 archivos)
-│   ├── conaf_loader.py     (294)     # descarga + clean CONAF vía Dataverse API
-│   ├── era5_downloader.py  (352)     # request a Copernicus CDS, NetCDF mensuales
-│   ├── era5_extractor.py   (229)     # lectura NetCDF + interpolación nearest-grid
-│   ├── derived_features.py (107)     # HR Magnus, VPD, wind_speed/direction, °K→°C
-│   ├── enrichment.py       (215)     # spatial-temporal join CONAF × ERA5
-│   ├── feature_report.py   (371)     # profiling JSON/Markdown del dataset
-│   ├── attribution.py       (80)     # sidecar metadata por output
-│   ├── pipeline.py         (310)     # orquesta load → era5 → extract → enrich → report
-│   ├── run_store.py        (126)     # persistencia estado de runs
-│   ├── config.py            (94)     # paths, CHILE_BBOX, variables ERA5
-│   └── utils.py             (34)     # helpers
-│
-├── scripts/                          # entry points + utilidades (1.213 LOC, 6 archivos)
-│   ├── preprocess.py            (75) # CLI entry (typer) — `python scripts/preprocess.py --years 2012-2018`
-│   ├── megafire_thresholds.py  (170) # P95/P98/P99/lognorm/Pareto-80, genera megafire_thresholds.md
-│   ├── monitor.py              (725) # dashboard FastAPI puerto 8877
-│   ├── patch_evavt.py           (79) # repara evavt en NetCDF existentes
-│   ├── repair_nc_lon.py        (119) # arregla longitudes en NetCDF dañados
-│   └── download_era5_conaf_days.py (45) # descarga ERA5 día-a-día (uso puntual)
-│
-├── eda/
-│   ├── 01_conaf_eda.ipynb            # EDA exploratorio CONAF 2002-2020 (plotly + folium)
-│   └── Propuestas.md                 # justificación variables ERA5 (refs Zakari/Liao)
-│
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#xai-project-interpretable-prediction-of-mega-fires-in-chile" id="toc-xai-project-interpretable-prediction-of-mega-fires-in-chile">XAI-project
+— Interpretable Prediction of Mega-Fires in Chile</a>
+<ul>
+<li><a href="#authors-course" id="toc-authors-course">Authors &amp;
+course</a></li>
+<li><a href="#repository-structure" id="toc-repository-structure">Repository structure</a></li>
+<li><a href="#data-pipeline-architecture" id="toc-data-pipeline-architecture">Data pipeline architecture</a></li>
+<li><a href="#installation-credentials" id="toc-installation-credentials">Installation &amp;
+credentials</a></li>
+<li><a href="#reproduction-end-to-end" id="toc-reproduction-end-to-end">Reproduction (end-to-end)</a></li>
+<li><a href="#results-summary-preliminary" id="toc-results-summary-preliminary">Results summary
+(preliminary)</a></li>
+<li><a href="#ai-usage" id="toc-ai-usage">AI usage</a></li>
+<li><a href="#troubleshooting" id="toc-troubleshooting">Troubleshooting</a></li>
+<li><a href="#data-sources-licenses" id="toc-data-sources-licenses">Data
+sources &amp; licenses</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="xai-project-interpretable-prediction-of-mega-fires-in-chile">XAI-project
+— Interpretable Prediction of Mega-Fires in Chile</h1>
+<p><strong>From Spark to Catastrophe: Interpretable Prediction of
+Mega-Fires in Chile via XGBoost and Tree SHAP.</strong></p>
+<p>This repository contains the data pipeline, exploratory analysis,
+baseline model, and paper for an INF-473 (Explainable AI) course
+project. Rather than predicting <em>whether</em> a fire will ignite, the
+project predicts — <strong>conditional on ignition having
+occurred</strong> — whether a fire will escalate into a
+<em>mega-fire</em>, and uses <strong>Tree SHAP</strong> to explain which
+meteorological and geospatial drivers push an ordinary fire over that
+threshold. The dataset fuses CONAF historical fire records with
+ERA5-Land atmospheric reanalysis and MODIS/FIRMS active-fire
+detections.</p>
+<p>The full write-up is in <a href="latex/main.pdf"><code>latex/main.pdf</code></a>.</p>
+<hr />
+<h2 id="authors-course">Authors &amp; course</h2>
+<table>
+<tbody>
+<tr>
+<td><strong>Course</strong></td>
+<td>INF-473 — Explainable AI</td>
+</tr>
+<tr>
+<td><strong>Institution</strong></td>
+<td>Universidad Técnica Federico Santa María (UTFSM)</td>
+</tr>
+<tr>
+<td><strong>Instructor</strong></td>
+<td>Prof. Raquel Pezoa Rivera</td>
+</tr>
+<tr>
+<td><strong>Authors</strong></td>
+<td>Eduardo Morales · Octavia Jara · Benjamín Reyes</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="repository-structure">Repository structure</h2>
+<pre><code>XAI-project/
+├── src/                      # Core pipeline (reusable modules) — see src/README.md
+│   ├── config.py             # Paths, bbox, ERA5 variable lists, .env loading
+│   ├── conaf_loader.py       # CONAF registry download + normalization (Dataverse/itrend)
+│   ├── era5.py               # ERA5-Land download + nearest-neighbor point extraction
+│   ├── enrichment.py         # Join CONAF events with point-matched ERA5
+│   ├── derived_features.py   # Derived meteorology (RH, VPD, wind, precip)
+│   ├── modis.py              # MODIS/FIRMS FRP + CONAF matching + L2 label
+│   ├── pipeline.py           # Orchestration: run_pipeline()
+│   └── reporting.py          # CC-BY attribution + feature-profile reports
+├── scripts/                  # Command-line entry points — see scripts/README.md
+│   ├── preprocess.py         # CLI: end-to-end CONAF+ERA5(+MODIS) preprocessing
+│   └── megafire_thresholds.py# Per-region statistical thresholds (P95/99, log-normal, Pareto)
+├── eda/                      # Exploratory analysis (Jupyter)
+│   ├── 01_conaf_eda.ipynb            # CONAF EDA 2002–2020 (heavy-tail, maps, seasonality)
+│   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
 ├── modeling/
-│   └── 01_xgboost_baseline.ipynb     # esqueleto 19 celdas, NO entrenado aún
-│
-├── docs/
-│   └── megafire_labeling_pipeline.html  # pipeline detallado de etiquetado (1.664 líneas)
-│
-├── data/                             # .gitignored
-│   ├── raw/
-│   │   ├── conaf/                    # 18 CSVs + 18 GeoJSONs (2002-2003 a 2019-2020)
-│   │   └── era5/                     # 132 NetCDF mensuales (jul 2002 - jun 2020)
-│   ├── interim/                      # CONAF clean (post-mover: vacío hasta re-ejecutar loader)
-│   ├── processed/
-│   │   ├── conaf_enriched_latest.parquet            # latest run enriquecido
-│   │   ├── conaf_enriched_2012_2018.parquet         # run base del estudio actual
-│   │   ├── megafire_thresholds.md                   # tabla umbrales por región
-│   │   ├── features_report.md  / .json              # profiling
-│   │   └── *.attribution.json                       # metadatos por output
-│   ├── archive/
-│   │   ├── conaf_clean.parquet                      # ex-vigente, 109.947 × 28
-│   │   ├── conaf_enriched.parquet (.attribution)    # versión obsoleta
-│   │   ├── conaf_enriched_2002_2002.parquet (+meta) # POC de un año
-│   │   └── README.md                                # trazabilidad de archivado
-│   └── models/                       # vacío (.gitkeep)
-│
-├── references/
-│   └── Tedim2018_DefiningEWE.pdf     # 716 KB — el resto se cita por DOI
-│
-├── tests/                            # 160 LOC en 4 archivos
-│   ├── test_pipeline.py
-│   ├── test_conaf_loader.py
-│   ├── test_era5_extractor.py
-│   └── test_monitor.py
-│
-├── README.md                         # quickstart corto (69 líneas)
-├── README.html                       # este documento
-├── Makefile                          # setup / notebook / test / lint / clean
-└── requirements.txt</pre>
-
-  <p class="small">
-    <strong>LOC total</strong>: 3.585 (src + scripts + tests). El módulo más grande es
-    <code>scripts/monitor.py</code> (725 LOC, dashboard FastAPI independiente del pipeline
-    principal).
-  </p>
-</section>
-
-<!-- =================== SECCIÓN 7 =================== -->
-<section id="estado">
-  <h2>7. Estado de implementación <a class="heading-anchor" href="#estado">#</a></h2>
-
-  <table>
-    <thead>
-      <tr><th>Componente</th><th>Estado</th><th>Artefacto / ubicación</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>ETL CONAF (descarga + clean)</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/conaf_loader.py</code> → 109.947 × 28 (archivado)</td>
-      </tr>
-      <tr>
-        <td>ETL ERA5 (download mensual)</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/era5_downloader.py</code> → 132 NetCDF</td>
-      </tr>
-      <tr>
-        <td>Extractor ERA5 (interpolación)</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/era5_extractor.py</code></td>
-      </tr>
-      <tr>
-        <td>Features derivadas (HR, VPD, viento)</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/derived_features.py</code></td>
-      </tr>
-      <tr>
-        <td>Enrichment (spatial-temporal join)</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/enrichment.py</code> → parquet enriched + columnas ERA5/MODIS según run</td>
-      </tr>
-      <tr>
-        <td>Profiling automático</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>src/feature_report.py</code> → <code>features_report.{md,json}</code></td>
-      </tr>
-      <tr>
-        <td>Análisis estadístico de umbrales</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>scripts/megafire_thresholds.py</code> → <code>megafire_thresholds.md</code></td>
-      </tr>
-      <tr>
-        <td>EDA exploratorio</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>eda/01_conaf_eda.ipynb</code> (CONAF 2002-2020 completo)</td>
-      </tr>
-      <tr>
-        <td>Documentación pipeline de etiquetado</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>docs/megafire_labeling_pipeline.html</code></td>
-      </tr>
-      <tr>
-        <td>Dashboard de monitoreo</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td><code>scripts/monitor.py</code> (FastAPI puerto 8877)</td>
-      </tr>
-      <tr>
-        <td>Notebook XGBoost baseline (esqueleto)</td>
-        <td><span class="badge badge-progress">⏳ En progreso</span></td>
-        <td><code>modeling/01_xgboost_baseline.ipynb</code> — 19 celdas estructuradas, target/params placeholders por completar</td>
-      </tr>
-      <tr>
-        <td><strong>Pipeline L2</strong> (MODIS-FRP → FLI ≥ 10.000 kW/m)</td>
-        <td><span class="badge badge-done">✓ Done</span></td>
-        <td>Implementado con NASA FIRMS Area API en <code>src/modis.py</code>; requiere <code>FIRMS_MAP_KEY</code>.</td>
-      </tr>
-      <tr>
-        <td>Entry point opcional para L1b/sensitivity</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Opcional: el ETL principal ya genera L2; queda pendiente si se quiere un entrypoint dedicado para sensitivity analysis L1b.</td>
-      </tr>
-      <tr>
-        <td>Entrenamiento XGBoost — <strong>modelo L1b</strong> (proxy/sensitivity)</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Modelo secundario para sensitivity analysis frente a L2</td>
-      </tr>
-      <tr>
-        <td>Entrenamiento XGBoost — <strong>modelo L2</strong> (target principal)</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Usa <code>label_l2</code> generado por el ETL; es el resultado central del paper</td>
-      </tr>
-      <tr>
-        <td>SHAP analysis comparativo L1b vs L2</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Contribución metodológica del paper: drivers consistentes vs específicos del label</td>
-      </tr>
-      <tr>
-        <td>Cross-validation espacial (leave-one-region-out)</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Sobre ambos modelos</td>
-      </tr>
-      <tr>
-        <td>Expansión enriched a 2002-2020</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Inputs listos (132 NetCDF), falta ejecutar enrichment sobre años no cubiertos</td>
-      </tr>
-      <tr>
-        <td>Paper draft</td>
-        <td><span class="badge badge-pending">⏸ Pendiente</span></td>
-        <td>Este documento sirve como background y método</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="callout callout-info">
-    <span class="callout-title">Lectura del estado</span>
-    La infraestructura principal está construida. Las líneas activas son: (i) verificar el run
-    2012-2018 con L2 y métricas MODIS reales; (ii) entrenar XGBoost-L2 como modelo principal;
-    (iii) usar L1b solo como sensitivity analysis. El cross-validation regional es parte del
-    protocolo de evaluación.
-  </div>
-</section>
-
-<!-- =================== SECCIÓN 8 =================== -->
-<section id="reproducibilidad">
-  <h2>8. Reproducibilidad <a class="heading-anchor" href="#reproducibilidad">#</a></h2>
-
-  <h3>8.1 Requisitos del entorno</h3>
-  <ul>
-    <li><strong>Python 3.12</strong> (recomendado). Fedora/RHEL: <code>dnf install python3.12</code>.
-        macOS: <code>brew install python@3.12</code>.</li>
-    <li><strong>RAM</strong>: ≥ 16 GB recomendado para procesar enrichment 2012-2018.</li>
-    <li><strong>Espacio en disco</strong>: ~3 GB para CONAF raw + varios GB adicionales para ERA5
-        mensual del rango 2012-2018.</li>
-    <li><strong>Tiempo estimado</strong>:
-      <ul>
-        <li>Setup + descarga CONAF: ~10 min (depende de ancho de banda).</li>
-        <li>Descarga ERA5 (1 año, 12 NetCDF): ~30-60 min (queue CDS).</li>
-        <li>Enrichment 2012-2018: depende del cache ERA5 y de la cola CDS.</li>
-        <li>Profiling: ~30 s.</li>
-        <li>Umbrales megaincendio: &lt; 5 s.</li>
-      </ul>
-    </li>
-  </ul>
-
-  <h3>8.2 Setup paso a paso</h3>
-  <pre><code># 1. Clonar y entrar al proyecto
-git clone &lt;repo-url&gt;
-cd XAI-project
-
-# 2. Crear venv e instalar dependencias
-make setup
-# → crea .venv, instala requirements.txt
-# → copia .env.example a .env si no existe
-
-# 3. Editar .env con credenciales
-# ITREND_API_KEY=&lt;uuid de datospararesiliencia.cl&gt;
-# CDSAPI_KEY=&lt;tu API key Copernicus, opcional si tienes ~/.cdsapirc&gt;
-
-# 4. Configurar ~/.cdsapirc (alternativa a CDSAPI_KEY en .env)
-cat &gt; ~/.cdsapirc &lt;&lt;EOF
-url: https://cds.climate.copernicus.eu/api
-key: &lt;tu API key&gt;
-EOF
-
-# 5. Activar venv
-source .venv/bin/activate</code></pre>
-
-  <h4>Credenciales requeridas</h4>
-  <dl>
-    <dt>itrend (CONAF)</dt>
-    <dd>Obtén tu API token en
-        <a href="https://datospararesiliencia.cl">datospararesiliencia.cl</a>
-        → tu perfil → API Token. Pégalo en <code>.env</code> como
-        <code>ITREND_API_KEY=tu-uuid</code>.</dd>
-    <dt>Copernicus CDS (ERA5-Land)</dt>
-    <dd>Crea cuenta en <a href="https://cds.climate.copernicus.eu">cds.climate.copernicus.eu</a>,
-        acepta los términos de uso de ERA5-Land específicamente, y obtén tu API key.</dd>
-  </dl>
-
-  <h3>8.3 Ejecución del pipeline</h3>
-  <pre><code># Smoke test sobre 2002 (rápido, no descarga ERA5 si ya está cacheado)
-python scripts/preprocess.py --years 2002-2002 --skip-download
-
-# Run base del estudio actual
-python scripts/preprocess.py --years 2012-2018
-
-# Producción full
-python scripts/preprocess.py --years 2002-2020
-
-# Re-generar umbrales megaincendio (lee enriched, escribe markdown)
-python scripts/megafire_thresholds.py
-
-# Dashboard de monitoreo (opcional)
-python scripts/monitor.py --port 8877
-# → http://127.0.0.1:8877</code></pre>
-
-  <h3>8.4 Outputs esperados por etapa</h3>
-  <table>
-    <thead><tr><th>Etapa</th><th>Output</th></tr></thead>
-    <tbody>
-      <tr><td>CONAF download</td><td><code>data/raw/conaf/*.csv</code>, <code>*.geojson</code></td></tr>
-      <tr><td>CONAF clean</td><td><code>data/interim/conaf_clean.parquet</code></td></tr>
-      <tr><td>ERA5 download</td><td><code>data/raw/era5/YYYY-MM.nc</code> (mensual)</td></tr>
-      <tr><td>Enrichment</td><td><code>data/processed/conaf_enriched_YYYY_YYYY.parquet</code> + <code>.attribution.json</code></td></tr>
-      <tr><td>Profiling</td><td><code>data/processed/features_report.md</code>, <code>.json</code></td></tr>
-      <tr><td>Umbrales</td><td><code>data/processed/megafire_thresholds.md</code></td></tr>
-    </tbody>
-  </table>
-
-  <h3>8.5 Tests</h3>
-  <p>
-    Suite de smoke tests en <code>tests/</code> (~160 LOC, 4 archivos). Cubre:
-    <code>test_pipeline.py</code> (orquestación), <code>test_conaf_loader.py</code> (parseo CSV),
-    <code>test_era5_extractor.py</code> (lectura NetCDF), <code>test_monitor.py</code>
-    (endpoints FastAPI).
-  </p>
-  <pre><code>make test    # corre la suite completa
-make lint    # ruff check sobre src/</code></pre>
-</section>
-
-<!-- =================== SECCIÓN 9 =================== -->
-<section id="decisiones">
-  <h2>9. Decisiones de diseño registradas <a class="heading-anchor" href="#decisiones">#</a></h2>
-
-  <p>
-    Cada decisión está documentada con su motivación y el lugar donde se profundiza el análisis.
-    Sirve de checklist para revisión metodológica y para defender choices al escribir el paper.
-  </p>
-
-  <table>
-    <thead>
-      <tr><th>Decisión</th><th>Motivación</th><th>Profundización</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Acotar análisis a <strong>2012-2018</strong> y tres regiones</td>
-        <td>Cubre años normales y la temporada 2016-2017, manteniendo foco en Maule, Biobío
-            y Araucanía.</td>
-        <td><a href="#datos">§4.5</a></td>
-      </tr>
-      <tr>
-        <td><strong>P99 regional</strong> como threshold del proxy secundario L1b</td>
-        <td>Preserva semántica «top 1%», respeta heterogeneidad ecológica y queda como
-            sensitivity analysis frente al target L2.</td>
-        <td><a href="docs/megafire_labeling_pipeline.html#estrategia">labeling_pipeline.html §5</a></td>
-      </tr>
-      <tr>
-        <td>Filtrar a <strong>Maule, Biobío y Araucanía</strong></td>
-        <td>Define el alcance del estudio centro-sur; Ñuble queda dentro de Biobío histórico.</td>
-        <td><a href="docs/megafire_labeling_pipeline.html#estrategia">labeling_pipeline.html §5.3</a></td>
-      </tr>
-      <tr>
-        <td><strong>BBOX</strong> [-74°/-70° lon, -42°/-34° lat]</td>
-        <td>Cubre la zona centro-sur donde se concentran &gt;90% de eventos y los regímenes
-            mediterráneo y nórdico. Limita volumen de descarga ERA5.</td>
-        <td><code>src/config.py:25</code></td>
-      </tr>
-      <tr>
-        <td>Conservar <strong>pérdida de geometry</strong> en enriched</td>
-        <td><code>latitud</code>/<code>longitud</code> están como columnas numéricas; reconstruir
-            geometry es trivial con <code>points_from_xy</code>. Reduce tamaño del parquet.</td>
-        <td><a href="#datos">§4.5</a></td>
-      </tr>
-      <tr>
-        <td>Match ERA5: <strong>nearest-grid</strong>, no interpolación bilinear</td>
-        <td>Variables horarias suavizadas; ~9 km de resolución; el ruido de interpolación es
-            menor al ruido de match temporal ±30 min.</td>
-        <td><code>src/enrichment.py</code></td>
-      </tr>
-      <tr>
-        <td><strong>L2 target objetivo + L1b proxy secundario / sensitivity</strong></td>
-        <td>L2 (FLI ≥ 10.000 kW/m, Tedim 2018) es el estándar internacional y el resultado
-            principal del paper. L1b (P99 regional de hectáreas) queda como análisis de
-            sensibilidad metodológico.</td>
-        <td><a href="docs/megafire_labeling_pipeline.html#estrategia">labeling_pipeline.html §5</a></td>
-      </tr>
-      <tr>
-        <td>L1c (ROS_avg) <strong>diferido</strong></td>
-        <td>Discutido en sesión previa: ROS promedio sub-estima ROS pico, y duración CONAF
-            es ruidosa. Útil como sanity check, no como tercer label.</td>
-        <td>Discusión interna; no implementado</td>
-      </tr>
-      <tr>
-        <td><strong>XGBoost</strong> como algoritmo objetivo</td>
-        <td>Maneja features mixtas + imbalance + missing. SHAP TreeExplainer exacto y rápido.
-            Competitivo con DL en interpretabilidad (Liao 2025).</td>
-        <td><a href="#metodologia">§5.4</a></td>
-      </tr>
-      <tr>
-        <td><strong>Split temporal</strong>, no aleatorio</td>
-        <td>Megaincendios concentrados en enero-febrero 2017; split aleatorio crearía correlación
-            train-test.</td>
-        <td><a href="#metodologia">§5.5</a></td>
-      </tr>
-      <tr>
-        <td><strong>Excluir <code>era5_dist_km</code>, etc.</strong> del feature set</td>
-        <td>Calidad técnica del match, no señal física. Útil para filtrado pre-modelado.</td>
-        <td><a href="docs/megafire_labeling_pipeline.html#features">labeling_pipeline.html §7</a></td>
-      </tr>
-      <tr>
-        <td>Mover datasets viejos a <strong><code>data/archive/</code></strong></td>
-        <td>Evita confusión sobre cuál es la fuente vigente. Preserva trazabilidad histórica.</td>
-        <td><a href="data/archive/README.md">data/archive/README.md</a></td>
-      </tr>
-    </tbody>
-  </table>
-</section>
-
-<!-- =================== SECCIÓN 10 =================== -->
-<section id="roadmap">
-  <h2>10. Roadmap <a class="heading-anchor" href="#roadmap">#</a></h2>
-
-  <h3>Corto plazo (1-2 semanas) — dos líneas paralelas</h3>
-  <p><strong>Línea A — implementación de L2 (target objetivo)</strong>:</p>
-  <ul>
-    <li>Verificar <code>FIRMS_MAP_KEY</code> y ejecutar el pipeline 2012-2018 con MODIS activo.</li>
-    <li>Reportar conteos reales de <code>label_l2</code>, FRP válido y matches MODIS.</li>
-    <li>Validar eventos extremos conocidos, incluyendo Las Máquinas, contra el label L2.</li>
-  </ul>
-  <p><strong>Línea B — L1b como sensitivity analysis</strong>:</p>
-  <ul>
-    <li>Productivizar L1b solo si se requiere un artefacto separado de sensitivity analysis.</li>
-    <li>Completar y ejecutar <code>modeling/01_xgboost_baseline.ipynb</code> con
-        <code>label_l1b</code> como target.</li>
-    <li>SHAP analysis preliminar: feature importance global, dependence plots top-5, explicaciones
-        locales para Las Máquinas y otros 2-3 eventos catastróficos.</li>
-    <li>Documentar resultados preliminares como sensitivity baseline en un notebook reportable.</li>
-  </ul>
-
-  <h3>Medio plazo (1-2 meses)</h3>
-  <ul>
-    <li>Entrenar XGB-L2 como modelo principal del paper usando el parquet 2012-2018.</li>
-    <li><strong>Comparación SHAP L1b vs L2</strong>: matriz de confusión entre labels, análisis
-        de discrepancias, ranking de features estable vs específico del label. Esta comparación
-        es la contribución metodológica central del paper.</li>
-    <li>Implementar cross-validation leave-one-region-out sobre ambos modelos. Evaluar
-        generalización ecológica.</li>
-    <li>Análisis de sensibilidad complementario: ¿cómo cambian los SHAPs al usar P98 vs P99 en L1b?
-        ¿Cómo cambian al variar <code>radiant_fraction</code> en L2?</li>
-  </ul>
-
-  <h3>Largo plazo (3-6 meses)</h3>
-  <ul>
-    <li>Expandir el enriched a 2002-2020 (re-ejecutar <code>scripts/preprocess.py --years 2002-2020</code>)
-        y re-entrenar ambos modelos sobre el dataset ampliado. Comparar SHAPs con los baselines
-        2016-17 para identificar features estables vs específicas de un período.</li>
-    <li>Considerar tercer label L1c (ROS estimado desde superficie + duración) si la calidad de
-        <code>duracion_minutos</code> permite cálculo confiable — diferido en sesión previa.</li>
-    <li>Redacción de paper: este documento + EDA notebook + modeling notebooks (L1b + L2) +
-        análisis comparativo como insumos. Resultado central: SHAP analysis sobre L2.</li>
-  </ul>
-
-  <h3>Más allá del paper</h3>
-  <ul>
-    <li>Productivizar como microservicio: API que recibe (lat, lon, fecha_hora) y devuelve
-        probabilidad de megaincendio + top SHAP features. Integración potencial con sistemas
-        de despacho CONAF.</li>
-    <li>Dashboard explicativo para política pública: mapa de Chile con celdas de riesgo
-        prospectivo basado en pronóstico ERA5.</li>
-    <li>Versionamiento de modelos: cuando se actualice el dataset, re-entrenar y comparar
-        SHAPs para detectar drift de los drivers.</li>
-  </ul>
-</section>
-
-<!-- =================== SECCIÓN 11 — REFERENCIAS =================== -->
-<section id="referencias">
-  <h2>11. Referencias <a class="heading-anchor" href="#referencias">#</a></h2>
-
-  <ol class="references">
-    <li>
-      <span class="ref-num">[1]</span>
-      Tedim, F., Leone, V., Amraoui, M., Bouillon, C., Coughlan, M. R., Delogu, G. M.,
-      Fernandes, P. M., Ferreira, C., McCaffrey, S., McGee, T. K., Parente, J., Paton, D.,
-      Pereira, M. G., Ribeiro, L. M., Viegas, D. X., &amp; Xanthopoulos, G. (2018).
-      Defining extreme wildfire events: difficulties, challenges, and impacts.
-      <em>Fire</em>, 1(1), 9.
-      DOI: <a href="https://doi.org/10.3390/fire1010009">10.3390/fire1010009</a>
-      · PDF local: <code>references/Tedim2018_DefiningEWE.pdf</code>
-    </li>
-    <li>
-      <span class="ref-num">[2]</span>
-      Muñoz-Sabater, J. (2019). ERA5-Land hourly data from 1950 to present.
-      Copernicus Climate Change Service (C3S) Climate Data Store (CDS).
-      DOI: <a href="https://doi.org/10.24381/cds.e2161bac">10.24381/cds.e2161bac</a>
-      · Licencia: CC BY 4.0
-    </li>
-    <li>
-      <span class="ref-num">[3]</span>
-      Zakari, R. Y., Malik, O. A., &amp; Ong, W.-H. (2025). Spatio-temporal wildfire
-      forecasting in Australia using deep learning and explainable AI.
-      <em>Modeling Earth Systems and Environment</em>, 11, 425.
-      DOI: <a href="https://doi.org/10.1007/s40808-025-02621-7">10.1007/s40808-025-02621-7</a>
-    </li>
-    <li>
-      <span class="ref-num">[4]</span>
-      Liao, B., Zhou, T., Liu, Y., Li, M., &amp; Zhang, T. (2025). Tackling the wildfire
-      prediction challenge: An explainable artificial intelligence (XAI) model combining
-      extreme gradient boosting (XGBoost) with SHapley additive exPlanations (SHAP) for
-      enhanced interpretability and accuracy.
-      <em>Forests</em>, 16(4), 689.
-      DOI: <a href="https://doi.org/10.3390/f16040689">10.3390/f16040689</a>
-    </li>
-    <li>
-      <span class="ref-num">[5]</span>
-      Coffield, S. R., Graff, C. A., Chen, Y., Smyth, P., Foufoula-Georgiou, E., &amp;
-      Randerson, J. T. (2019). Machine learning to predict final fire size at the time of
-      ignition. <em>International Journal of Wildland Fire</em>, 28(11), 861-873.
-      DOI: <a href="https://doi.org/10.1071/WF19023">10.1071/WF19023</a>
-    </li>
-    <li>
-      <span class="ref-num">[6]</span>
-      Wooster, M. J., Zhukov, B., &amp; Oertel, D. (2003). Fire radiative energy for
-      quantitative study of biomass burning: Derivation from the BIRD experimental satellite
-      and comparison to MODIS fire products.
-      <em>Remote Sensing of Environment</em>, 86(1), 83-107.
-      DOI: <a href="https://doi.org/10.1016/S0034-4257(03)00070-1">10.1016/S0034-4257(03)00070-1</a>
-    </li>
-    <li>
-      <span class="ref-num">[7]</span>
-      Byram, G. M. (1959). Combustion of forest fuels. En K. P. Davis (Ed.),
-      <em>Forest fire: control and use</em> (pp. 61-89). McGraw-Hill.
-    </li>
-    <li>
-      <span class="ref-num">[8]</span>
-      Rothermel, R. C. (1972). A mathematical model for predicting fire spread in wildland
-      fuels. <em>USDA Forest Service Research Paper INT-115</em>.
-    </li>
-    <li>
-      <span class="ref-num">[9]</span>
-      Alexander, M. E. (1982). Calculating and interpreting forest fire intensities.
-      <em>Canadian Journal of Botany</em>, 60(4), 349-357.
-      DOI: <a href="https://doi.org/10.1139/b82-048">10.1139/b82-048</a>
-    </li>
-    <li>
-      <span class="ref-num">[10]</span>
-      Murray, F. W. (1967). On the computation of saturation vapor pressure.
-      <em>Journal of Applied Meteorology</em>, 6(1), 203-204.
-    </li>
-    <li>
-      <span class="ref-num">[11]</span>
-      Lundberg, S. M., &amp; Lee, S.-I. (2017). A unified approach to interpreting model
-      predictions. En <em>Advances in Neural Information Processing Systems</em> (NeurIPS),
-      30, 4765-4774.
-    </li>
-    <li>
-      <span class="ref-num">[12]</span>
-      Chen, T., &amp; Guestrin, C. (2016). XGBoost: A scalable tree boosting system. En
-      <em>Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery
-      and Data Mining</em>, 785-794.
-      DOI: <a href="https://doi.org/10.1145/2939672.2939785">10.1145/2939672.2939785</a>
-    </li>
-    <li>
-      <span class="ref-num">[13]</span>
-      CONAF / itrend. Registro histórico de incendios forestales de Chile.
-      Plataforma de Datos para la Resiliencia ante Desastres.
-      DOI: <a href="https://doi.org/10.71578/UXAUN5">10.71578/UXAUN5</a>
-    </li>
-    <li>
-      <span class="ref-num">[14]</span>
-      NASA LANCE FIRMS. MODIS Active Fire Products (MOD14/MYD14).
-      Disponible en <a href="https://firms.modaps.eosdis.nasa.gov">firms.modaps.eosdis.nasa.gov</a>.
-    </li>
-  </ol>
-</section>
-
-<!-- =================== APÉNDICE A =================== -->
-<section id="apend-mapa">
-  <h2>Apéndice A — Mapa de documentación <a class="heading-anchor" href="#apend-mapa">#</a></h2>
-
-  <table>
-    <thead><tr><th>Para entender…</th><th>Leer…</th></tr></thead>
-    <tbody>
-      <tr><td>Quickstart del proyecto</td><td><code>README.md</code></td></tr>
-      <tr><td>Visión completa + paper background</td><td><code>README.html</code> (este documento)</td></tr>
-      <tr><td>Pipeline detallado de etiquetado</td><td><code>docs/megafire_labeling_pipeline.html</code></td></tr>
-      <tr><td>Justificación de variables ERA5 elegidas</td><td><code>eda/Propuestas.md</code></td></tr>
-      <tr><td>Datos exploración CONAF</td><td><code>eda/01_conaf_eda.ipynb</code></td></tr>
-      <tr><td>Esqueleto del modelo XGBoost</td><td><code>modeling/01_xgboost_baseline.ipynb</code></td></tr>
-      <tr><td>Profiling completo del enriched</td><td><code>data/processed/features_report.md</code></td></tr>
-      <tr><td>Umbrales megaincendio por región</td><td><code>data/processed/megafire_thresholds.md</code></td></tr>
-      <tr><td>Trazabilidad de archivos archivados</td><td><code>data/archive/README.md</code></td></tr>
-      <tr><td>Tedim et al. 2018 (paper original)</td><td><code>references/Tedim2018_DefiningEWE.pdf</code></td></tr>
-    </tbody>
-  </table>
-</section>
-
-<!-- =================== APÉNDICE B =================== -->
-<section id="apend-glosario">
-  <h2>Apéndice B — Glosario rápido <a class="heading-anchor" href="#apend-glosario">#</a></h2>
-
-  <dl>
-    <dt>BBOX</dt>
-    <dd>Bounding box geográfica. En este proyecto: [-74°/-70° lon, -42°/-34° lat], cubre la zona
-        centro-sur de Chile.</dd>
-    <dt>CONAF</dt>
-    <dd>Corporación Nacional Forestal de Chile. Operador del registro oficial de incendios
-        forestales.</dd>
-    <dt>EDA</dt>
-    <dd>Exploratory Data Analysis. Notebook de inspección preliminar antes de modelar.</dd>
-    <dt>ERA5-Land</dt>
-    <dd>Reanálisis climático del ECMWF a ~9 km y horario. Cubre 1950–presente.</dd>
-    <dt>ETL</dt>
-    <dd>Extract-Transform-Load. Pipeline de ingesta y preparación de datos.</dd>
-    <dt>EWE (Extreme Wildfire Event)</dt>
-    <dd>Categoría 5+ de Tedim 2018: FLI ≥ 10.000 kW/m, ROS &gt; 50 m/min, spotting &gt; 1 km.</dd>
-    <dt>FLI (Fire Line Intensity)</dt>
-    <dd>Energía liberada por unidad de longitud del frente de fuego (kW/m). Byram 1959.</dd>
-    <dt>FRP (Fire Radiative Power)</dt>
-    <dd>Potencia radiativa total del fuego (MW), medible por satélites MODIS.</dd>
-    <dt>HR (Humedad Relativa)</dt>
-    <dd>Razón entre presión de vapor real y de saturación (%). Derivada de t2m y d2m.</dd>
-    <dt>L1b / L2</dt>
-    <dd>Labels del proyecto. <strong>L2 = target objetivo</strong>: FLI ≥ 10.000 kW/m estimado
-        desde MODIS-FRP, alineado con el estándar Tedim 2018. <strong>L1b = proxy secundario +
-        sensitivity</strong>: P99 regional de <code>superficie_quemada_total_ha</code> para
-        contrastar resultados frente al target físico.</dd>
-    <dt>LAI (Leaf Area Index)</dt>
-    <dd>Área foliar por unidad de área de suelo. ERA5: <code>lai_hv</code> (alta vegetación),
-        <code>lai_lv</code> (baja).</dd>
-    <dt>MODIS</dt>
-    <dd>Moderate Resolution Imaging Spectroradiometer. Sensor en Terra (2000+) y Aqua (2002+).
-        Productos MOD14/MYD14 para fuegos activos.</dd>
-    <dt>P99 regional</dt>
-    <dd>Percentil 99 de <code>superficie_quemada_total_ha</code> calculado por separado en cada
-        región. Define el threshold L1b.</dd>
-    <dt>PR-AUC</dt>
-    <dd>Área bajo la curva Precision-Recall. Métrica preferida sobre ROC-AUC bajo class imbalance.</dd>
-    <dt>PyroCb (Pyrocumulonimbus)</dt>
-    <dd>Tormenta convectiva generada por el calor de un incendio. Marca categoría 6 de Tedim.</dd>
-    <dt>ROS (Rate of Spread)</dt>
-    <dd>Velocidad de propagación del frente de fuego (m/min). Rothermel 1972.</dd>
-    <dt><code>scale_pos_weight</code></dt>
-    <dd>Hyperparámetro de XGBoost que pondera más fuerte el gradiente de la clase positiva.
-        Recomendado: <code>n_neg / n_pos</code>.</dd>
-    <dt>SHAP (SHapley Additive exPlanations)</dt>
-    <dd>Método de XAI basado en teoría de juegos cooperativos. TreeExplainer es exacto para
-        modelos de árboles. Lundberg &amp; Lee 2017.</dd>
-    <dt>VPD (Vapor Pressure Deficit)</dt>
-    <dd>Diferencia entre presión de vapor de saturación y real (kPa o hPa). Predictor dominante
-        de severidad en literatura.</dd>
-    <dt>XGBoost</dt>
-    <dd>Implementación escalable de gradient boosting sobre árboles. Algoritmo objetivo del
-        proyecto. Chen &amp; Guestrin 2016.</dd>
-  </dl>
-</section>
-
-<!-- =================== APÉNDICE C =================== -->
-<section id="apend-comandos">
-  <h2>Apéndice C — Comandos disponibles <a class="heading-anchor" href="#apend-comandos">#</a></h2>
-
-  <h3>Makefile</h3>
-  <pre><code>make help          # Lista los targets disponibles
-make setup         # Crea .venv, instala dependencias, copia .env.example a .env
-make notebook      # Lanza Jupyter Lab en eda/
-make test          # Ejecuta pytest sobre tests/
-make lint          # Ruff check sobre src/
-make clean         # Elimina .venv y cachés Python/pytest</code></pre>
-
-  <h3>Scripts</h3>
-  <pre><code># Pipeline completo (CONAF → ERA5 → enrich → report)
-python scripts/preprocess.py --years YYYY-YYYY [--skip-download]
-
-# Recalcular umbrales megaincendio
-python scripts/megafire_thresholds.py
-
-# Dashboard de monitoreo
-python scripts/monitor.py --port 8877
-
-# Utilidades específicas
-python scripts/patch_evavt.py                       # repara evavt en NetCDF
-python scripts/repair_nc_lon.py &lt;path&gt;              # arregla longitudes dañadas
-python scripts/download_era5_conaf_days.py          # descarga ERA5 día-a-día puntual</code></pre>
-
-  <h3>Acceso programático rápido a datos</h3>
-  <pre><code>import pandas as pd
-
-# Dataset enriquecido vigente
-df = pd.read_parquet("data/processed/conaf_enriched_latest.parquet")
-print(df.shape)  # (12381, 66)
-print(df.columns.tolist())
-
-# Tabla de umbrales por región
-with open("data/processed/megafire_thresholds.md") as f:
-    print(f.read())
-
-# Profiling completo
-import json
-report = json.load(open("data/processed/features_report.json"))
-print(list(report.keys()))</code></pre>
-
-  <h3>Re-enriquecer con datos nuevos</h3>
-  <pre><code># 1. Descargar nuevos meses ERA5 (CDS)
-python scripts/download_era5_conaf_days.py --year 2018 --month 1
-
-# 2. Re-ejecutar pipeline
-python scripts/preprocess.py --years 2018-2018
-
-# 3. Verificar profiling
-cat data/processed/features_report.md | head -100</code></pre>
-</section>
-
-<footer style="margin-top: 5rem; padding-top: 2rem; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); font-size: 0.85rem;">
-  <p>
-    <strong>XAI-project · README.html</strong> — Versión de trabajo, mayo 2026.
-    Documento vivo: actualizar tras cada hito del roadmap.
-  </p>
-  <p>
-    Issues, sugerencias, fix de typos: editar este HTML directamente y commitear.
-    Los datos citados son a la fecha del último build de
-    <code>data/processed/conaf_enriched_latest.parquet</code>.
-  </p>
-</footer>
-
-</main>
-
-</div>
+│   └── 01_xgboost_baseline.ipynb     # L1 baseline: XGBoost + Tree SHAP (preliminary results)
+├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
+├── data/                     # gitignored (datasets) — see data/spec.md for ERA5 variables
+│   ├── raw/ · interim/ · processed/ · models/ · archive/
+├── latex/                    # IEEE paper (Overleaf source + main.pdf)
+├── references/               # Reference PDFs
+├── requirements.txt · Makefile · .env.example</code></pre>
+<p>Supplementary docs (Spanish): <a href="src/README.md"><code>src/README.md</code></a> (pipeline spec), <a href="scripts/README.md"><code>scripts/README.md</code></a> (CLI), <a href="data/spec.md"><code>data/spec.md</code></a> (ERA5-Land variables
+and derived-feature formulas).</p>
+<hr />
+<h2 id="data-pipeline-architecture">Data pipeline architecture</h2>
+<pre><code>  CONAF registry            ERA5-Land (CDS)          MODIS/FIRMS (NASA)
+  (Dataverse / itrend)      hourly + invariants      active-fire FRP
+        │                         │                        │
+        ▼                         │                        │
+  conaf_loader.py                 │                        │
+  normalize → UTC                 │                        │
+  data/interim/conaf_clean.parquet│                        │
+        │                         ▼                        │
+        │                   era5.py download               │
+        │                   (dynamic bbox per events)      │
+        └──────────────┬──────────┘                        │
+                       ▼                                    │
+                 enrichment.py                              │
+                 nearest-neighbor (lat, lon, ts)            │
+                 + era5_match_quality flag                  │
+                       │                                    │
+                       ▼                                    ▼
+              derived_features.py                    modis.py
+              K→°C · RH · VPD · wind · precip         FRP→FLI · match · label L2 (Tedim 2018)
+                       └───────────────┬────────────────────┘
+                                       ▼
+                          data/processed/conaf_enriched_*.parquet
+                          + .attribution.json (CC-BY) + features_report.md   (reporting.py)
+                                       │
+                       ┌───────────────┴───────────────┐
+                       ▼                                ▼
+                 eda/ notebooks                modeling/01_xgboost_baseline.ipynb
+                 (heavy-tail, labels)          XGBoost + Tree SHAP (L1)</code></pre>
+<p><strong>Labels.</strong> <em>L1</em> — area-based mega-fire
+(<code>superficie_quemada_total_ha ≥ 1,000</code>), the target of the
+current baseline. <em>L2</em> — Extreme Wildfire Event via FRP→FLI
+conversion (≥ 10,000 kW/m, Tedim 2018) with a MODIS detection guard;
+still in progress.</p>
+<hr />
+<h2 id="installation-credentials">Installation &amp; credentials</h2>
+<p>Python 3.12 recommended (Fedora/RHEL:
+<code>dnf install python3.12</code>; macOS:
+<code>brew install python@3.12</code>).</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone <span class="op">&lt;</span>repo-url<span class="op">&gt;</span> <span class="kw">&amp;&amp;</span> <span class="bu">cd</span> XAI-project</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> setup            <span class="co"># creates .venv, installs requirements.txt, copies .env.example → .env</span></span></code></pre></div>
+<p>Edit <code>.env</code> with your credentials (see
+<code>.env.example</code>):</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Where to get it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ITREND_API_KEY</code></td>
+<td>https://datospararesiliencia.cl → profile → API Token</td>
+</tr>
+<tr>
+<td><code>CDSAPI_KEY</code></td>
+<td>https://cds.climate.copernicus.eu → profile (also accept the
+ERA5-Land license)</td>
+</tr>
+<tr>
+<td><code>FIRMS_MAP_KEY</code></td>
+<td>https://firms.modaps.eosdis.nasa.gov/api/map_key/</td>
+</tr>
+</tbody>
+</table>
+<p>For ERA5 you may instead create <code>~/.cdsapirc</code>:</p>
+<pre><code>url: https://cds.climate.copernicus.eu/api
+key: YOUR-API-KEY</code></pre>
+<p>Run <code>make help</code> for all targets (<code>setup</code>,
+<code>notebook</code>, <code>test</code>, <code>lint</code>,
+<code>readme</code>, <code>clean</code>).</p>
+<hr />
+<h2 id="reproduction-end-to-end">Reproduction (end-to-end)</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Smoke test (no downloads, single year) — verifies the pipeline wiring</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/preprocess.py <span class="at">--years</span> 2002-2002 <span class="at">--skip-download</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. Full preprocessing (downloads CONAF + ERA5-Land + MODIS, then enriches)</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/preprocess.py <span class="at">--years</span> 2016-2017          <span class="co"># subset used by the baseline</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">#    flags: --skip-download | --download-only | --refresh-conaf | --skip-modis | --out PATH</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Per-region mega-fire thresholds (writes data/processed/megafire_thresholds.md)</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/megafire_thresholds.py</span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. Exploratory analysis</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> notebook                                            <span class="co"># jupyter lab eda/</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="co"># 5. Baseline model + explanations</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> lab modeling/01_xgboost_baseline.ipynb</span></code></pre></div>
+<p>The enriched dataset is also shipped compressed at the repo root
+(<code>conaf_enriched_latest.tar.gz</code>) so the notebooks can run
+without re-downloading the source APIs.</p>
+<hr />
+<h2 id="results-summary-preliminary">Results summary (preliminary)</h2>
+<p>L1 baseline (XGBoost, stratified 5-fold CV) on the 2016–2017 subset
+of four south-central regions (Maule, Biobío, Araucanía, O’Higgins):
+8,650 events with valid ERA5 coverage, 42 mega-fires
+(<code>≥ 1,000</code> ha, prevalence 0.49%).</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ROC-AUC</td>
+<td>0.947 ± 0.025</td>
+</tr>
+<tr>
+<td>PR-AUC (average precision)</td>
+<td>0.269 ± 0.076</td>
+</tr>
+<tr>
+<td>PR-AUC baseline (prevalence)</td>
+<td>0.0049</td>
+</tr>
+</tbody>
+</table>
+<p>Top Tree SHAP drivers: soil temperature (<code>stl2</code>),
+seasonality (<code>day_of_year</code>), and total evaporation
+(<code>e</code>) — a physically coherent, environment-dominated signal.
+Full analysis, figures, and discussion are in <a href="latex/main.pdf"><code>latex/main.pdf</code></a>.</p>
+<hr />
+<h2 id="ai-usage">AI usage</h2>
+<p>This project was developed with the assistance of an AI coding
+assistant (<strong>Claude Code</strong>, Anthropic). We disclose its use
+by area for transparency. In every case the authors defined the problem,
+reviewed and validated the output, made the modeling and scientific
+decisions, and are responsible for the final content.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Area</th>
+<th>How AI assisted</th>
+<th>Human responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Data pipeline</strong> (<code>src/</code>,
+<code>scripts/</code>)</td>
+<td>Implementation of modules (download, enrichment, reporting), CLI
+scaffolding, refactors</td>
+<td>Architecture, data-source choices, validation against source
+APIs</td>
+</tr>
+<tr>
+<td><strong>EDA</strong> (notebooks)</td>
+<td>Drafting analysis code and visualizations (heavy-tail, maps,
+seasonality)</td>
+<td>Interpretation, framing, conclusions</td>
+</tr>
+<tr>
+<td><strong>Model + XAI</strong></td>
+<td>XGBoost baseline, cross-validation, Tree SHAP, figure
+generation</td>
+<td>Threshold/feature choices, leakage control, reading of
+explanations</td>
+</tr>
+<tr>
+<td><strong>Paper + documentation</strong></td>
+<td>LaTeX drafting/editing, this README, formatting</td>
+<td>Authorship, claims, review, citations</td>
+</tr>
+<tr>
+<td><strong>SOTA / literature research</strong></td>
+<td>Searching and summarizing related work (incl. Google Scholar)</td>
+<td>Source selection, critical reading, citation decisions</td>
+</tr>
+</tbody>
+</table>
+<p>The use of AI assistance does not transfer authorship or
+accountability: all results were reviewed by the authors and are
+reported honestly, including the preliminary and high-variance nature of
+the current baseline.</p>
+<hr />
+<h2 id="troubleshooting">Troubleshooting</h2>
+<ul>
+<li><strong>ERA5 download fails / 403.</strong> You must accept the
+ERA5-Land license in the CDS web UI once, and have a valid
+<code>CDSAPI_KEY</code> (or <code>~/.cdsapirc</code>). New CDS accounts
+use the <code>cds.climate.copernicus.eu/api</code> endpoint.</li>
+<li><strong><code>ITREND_API_KEY</code> missing.</strong> CONAF download
+via Dataverse requires the token from datospararesiliencia.cl. Use
+<code>--skip-download</code> to run against already-downloaded
+data.</li>
+<li><strong><code>pyDataverse</code> errors.</strong> The Dataverse
+client is pinned to <code>pyDataverse==0.3.3</code> (the version the
+source portal documents); do not upgrade it.</li>
+<li><strong>Timezone confusion.</strong> CONAF timestamps are local
+Chilean time and are converted to <strong>UTC (naive)</strong> before
+matching ERA5; all joins are in UTC.</li>
+<li><strong>FIRMS quota / empty MODIS.</strong> The FIRMS Area API is
+rate-limited; use <code>--skip-modis</code> to build the dataset without
+the L2 label.</li>
+</ul>
+<hr />
+<h2 id="data-sources-licenses">Data sources &amp; licenses</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Source</th>
+<th>Reference</th>
+<th>License</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CONAF wildfire records</td>
+<td>itrend / Plataforma de Datos para la Resiliencia (DOI
+<code>10.71578/UXAUN5</code>)</td>
+<td>per portal terms</td>
+</tr>
+<tr>
+<td>ERA5-Land reanalysis</td>
+<td>Muñoz Sabater, J. (2019), Copernicus C3S CDS — DOI
+<code>10.24381/cds.e2161bac</code></td>
+<td>CC BY 4.0</td>
+</tr>
+<tr>
+<td>MODIS / FIRMS active fire</td>
+<td>NASA FIRMS Area API (MODIS Thermal Anomalies/Fire)</td>
+<td>NASA open data</td>
+</tr>
+</tbody>
+</table>
+<p>Per-dataset provenance is also emitted as machine-readable sidecars
+(<code>data/processed/*.attribution.json</code>) by
+<code>src/reporting.py</code>.</p>
 </body>
 </html>

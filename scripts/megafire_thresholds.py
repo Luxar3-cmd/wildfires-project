@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    scripts/megafire_thresholds.py — Per-region statistical mega-fire thresholds (P95/99, log-normal, Pareto)
+# =============================================================================
 """
 Propuestas de umbral estadístico para megaincendios CONAF.
 Métodos: percentil (P95/P98/P99), log-normal (μ+2σ, μ+2.5σ, μ+3σ),

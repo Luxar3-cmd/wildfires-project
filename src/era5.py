@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/era5.py — Download ERA5-Land and extract point values (nearest-neighbor)
+# =============================================================================
 """Descarga y extracción puntual de ERA5-Land.
 
 Dos responsabilidades cohesivas en un solo módulo:

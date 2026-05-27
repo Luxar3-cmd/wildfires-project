@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/enrichment.py — Join CONAF events with point-matched ERA5 by (year, month)
+# =============================================================================
 """Orquestación: une CONAF con ERA5 puntual (mismo timestamp y ubicación).
 
 Optimización de memoria: agrupa los incendios por (año, mes) y abre solo el
@@ -34,6 +40,7 @@ ENRICHED_PARQUET = DATA_PROCESSED / "conaf_enriched.parquet"
 
 
 def _resolve_timestamp_col(df: pd.DataFrame) -> str:
+	"""Devuelve el nombre de la primera columna de timestamp presente en el DataFrame."""
 	for cand in ("fecha_hora_inicio_utc", "fecha_hora_inicio", "fecha_inicio", "inicio", "fecha"):
 		if cand in df.columns:
 			return cand
@@ -41,6 +48,7 @@ def _resolve_timestamp_col(df: pd.DataFrame) -> str:
 
 
 def _resolve_lat_lon_cols(df: pd.DataFrame) -> tuple[str, str]:
+	"""Devuelve los nombres de las columnas de latitud y longitud presentes en el DataFrame."""
 	lat = next((c for c in df.columns if c in {"latitud", "latitude", "lat"}), None)
 	lon = next((c for c in df.columns if c in {"longitud", "longitude", "lon", "lng"}), None)
 	if not (lat and lon):
@@ -49,6 +57,7 @@ def _resolve_lat_lon_cols(df: pd.DataFrame) -> tuple[str, str]:
 
 
 def _bbox_mask(df: pd.DataFrame, lat_col: str, lon_col: str, bbox: dict) -> pd.Series:
+	"""Máscara booleana de los eventos que caen dentro del bounding box dado."""
 	return (
 		df[lat_col].between(bbox["south"], bbox["north"])
 		& df[lon_col].between(bbox["west"], bbox["east"])

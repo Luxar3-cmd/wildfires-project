@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/config.py — Project paths and environment-variable loading
+# =============================================================================
 """Paths del proyecto y carga de variables de entorno."""
 from __future__ import annotations
 

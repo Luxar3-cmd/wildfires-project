@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/conaf_loader.py — Download and clean the CONAF historical wildfire registry (Dataverse/itrend)
+# =============================================================================
 """Descarga y limpieza del registro histórico de incendios forestales de CONAF.
 
 Fuente: itrend / Plataforma de Datos para la Resiliencia ante Desastres
@@ -43,6 +49,7 @@ def _slugify_column(name: str) -> str:
 
 
 def _local_to_utc_naive(ts: pd.Series) -> pd.Series:
+	"""Convierte timestamps de hora local de Chile a UTC sin zona (naive)."""
 	values = pd.to_datetime(ts, errors="coerce")
 	if isinstance(values.dtype, pd.DatetimeTZDtype):
 		return values.dt.tz_convert("UTC").dt.tz_localize(None)
