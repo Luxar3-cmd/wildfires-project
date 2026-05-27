@@ -15,16 +15,17 @@ def relative_humidity(t2m_k: pd.Series, d2m_k: pd.Series) -> pd.Series:
 	"""Humedad relativa (%) desde temperatura y punto de rocío en Kelvin.
 
 	Fórmula de Magnus-Tetens (coeficientes de August-Roche-Magnus):
-	    es(T) = 6.112 * exp(17.625 * T / (T + 243.04))   [T en °C, resultado en hPa]
+	    es(T) = 6.1094 * exp(17.625 * T / (T + 243.04))   [T en °C, resultado en hPa]
 	    RH = 100 * es(Td) / es(T)
 
-	Coeficientes 17.625 / 243.04: versión optimizada para el rango -40 °C a +60 °C
-	(Alduchov & Eskridge, 1996). Error < 0.1 % en condiciones meteorológicas típicas.
+	Coeficientes 6.1094 / 17.625 / 243.04: aproximación AERK de Alduchov & Eskridge
+	(1996), forma August-Roche-Magnus (Lawrence, 2005). Válida en el rango
+	-40 °C a +50 °C. El prefactor se cancela en RH; en VPD escala el resultado.
 	"""
 	t = pd.to_numeric(t2m_k, errors="coerce") - KELVIN_TO_C
 	td = pd.to_numeric(d2m_k, errors="coerce") - KELVIN_TO_C
-	es_t = 6.112 * np.exp(17.625 * t / (t + 243.04))
-	es_td = 6.112 * np.exp(17.625 * td / (td + 243.04))
+	es_t = 6.1094 * np.exp(17.625 * t / (t + 243.04))
+	es_td = 6.1094 * np.exp(17.625 * td / (td + 243.04))
 	rh = 100.0 * es_td / es_t
 	return rh.clip(lower=0, upper=100)
 
@@ -63,8 +64,8 @@ def vpd_hpa(t2m_k: pd.Series, d2m_k: pd.Series) -> pd.Series:
 	"""
 	t = pd.to_numeric(t2m_k, errors="coerce") - KELVIN_TO_C
 	td = pd.to_numeric(d2m_k, errors="coerce") - KELVIN_TO_C
-	es_t = 6.112 * np.exp(17.625 * t / (t + 243.04))
-	es_td = 6.112 * np.exp(17.625 * td / (td + 243.04))
+	es_t = 6.1094 * np.exp(17.625 * t / (t + 243.04))
+	es_td = 6.1094 * np.exp(17.625 * td / (td + 243.04))
 	return (es_t - es_td).clip(lower=0)
 
 

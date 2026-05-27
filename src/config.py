@@ -19,9 +19,12 @@ ERA5_RAW_DIR = DATA_RAW / "era5"
 
 CONAF_DATASET_DOI = "doi:10.71578/UXAUN5"
 
-# Bounding box de la zona de estudio: Maule, Biobío, Araucanía y Los Ríos.
-# Se elige este recorte porque concentra >70 % de los eventos CONAF relevantes
-# para el modelo XAI y permite descargas ERA5 mucho más pequeñas que Chile completo.
+# Caja de extracción ERA5 sobre la macrozona centro-sur. Encierra las regiones de
+# interés (Maule, Biobío, Araucanía, O'Higgins; Ñuble queda dentro de Biobío en los
+# datos históricos, pues se creó en 2018) y geográficamente recorta también regiones
+# adyacentes (Los Ríos, Los Lagos, etc.). El subset modelable se restringe luego por
+# región de interés, aguas abajo; el bbox solo acota la descarga ERA5 (mucho menor que
+# Chile completo). Las regiones de interés concentran >70 % de los eventos CONAF.
 CHILE_BBOX = {"north": -34.0, "west": -74.0, "south": -42.0, "east": -70.0}
 
 # Variables temporales de ERA5-Land descargadas en cada request.
