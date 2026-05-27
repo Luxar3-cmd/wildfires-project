@@ -136,8 +136,82 @@
 	<p class="subtitle">Standalone English draft for the paper data section. Citation keys are LaTeX-compatible.</p>
 </header>
 
+<section id="overview">
+	<p>
+		This section describes the dataset assembled to study extreme wildfire behavior in Chile. The dataset integrates
+		three sources at the level of individual fire events: the CONAF historical wildfire inventory, which provides the
+		event anchors (ignition location and time); the ERA5-Land reanalysis, which supplies the meteorological and
+		land-surface covariates used as ex-ante predictors; and MODIS/FIRMS active-fire detections, which provide the
+		physically grounded extreme-fire label following the Extreme Wildfire Event (EWE) paradigm.
+	</p>
+	<p>
+		Each CONAF event is enriched by spatio-temporal matching to ERA5-Land and to MODIS/FIRMS, producing one row per
+		event with a strict separation between ex-ante predictors and post-ignition target information. The study focuses
+		on the four south-central regions defined in Section III-A; the empirical figures reported in this section
+		correspond to the 2016-2017 enriched data, comprising 12,381 events in the national inventory, of which 8,664 fall
+		in the study regions. The intended training window extends to the 2012-2018 seasons.
+	</p>
+</section>
+
+<section id="study-area">
+	<h2>III-A. Study Area and Regional Scope</h2>
+	<p>
+		The study is restricted to the south-central macrozone of Chile, defined by the geographic bounding box
+		<code>lat &isin; [&minus;42&deg;, &minus;34&deg;]</code> and <code>lon &isin; [&minus;74&deg;, &minus;70&deg;]</code>,
+		which covers the regions of Maule, Biobío, Araucanía, and O'Higgins. This macrozone concentrates the large majority
+		of the country's wildfire impact: over the 2002-2003 to 2019-2020 seasons it accounts for 72.7% of all recorded
+		fire events (79,886 of 109,947) and 75.6% of the total burned area (1,181,479 of 1,562,870 ha), as summarized in
+		Table I \cite{mcwethy2018Landscape,ubeda2016Chile}. O'Higgins and Maule are particularly relevant because they
+		contribute a far larger share of burned area than of event counts, indicating a concentration of high-severity
+		fires.
+	</p>
+	<p>
+		<strong>Administrative note.</strong> Ñuble is a new region created in 2018, when it was split from the Biobío
+		region. For the 2002-2017 seasons its territory is recorded under Biobío, so this study uses the Biobío label to
+		represent that territory consistently across the full time series.
+	</p>
+	<p>
+		This regional scope also defines the spatial domain over which ERA5-Land covariates are extracted. CONAF events
+		recorded elsewhere in the national inventory fall outside this domain, receive no ERA5-Land covariates, and are
+		flagged as <code>out_of_coverage</code> and excluded from modeling (Section III-D).
+	</p>
+	<table id="study-region-table">
+		<thead>
+			<tr><th>Region</th><th>Events</th><th>Events %</th><th>Burned area (ha)</th><th>Burned area %</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>Maule</td><td>10,111</td><td>9.2</td><td>386,081</td><td>24.7</td></tr>
+			<tr><td>Biobío</td><td>45,720</td><td>41.6</td><td>356,640</td><td>22.8</td></tr>
+			<tr><td>Araucanía</td><td>19,689</td><td>17.9</td><td>214,572</td><td>13.7</td></tr>
+			<tr><td>O'Higgins</td><td>4,366</td><td>4.0</td><td>224,185</td><td>14.3</td></tr>
+			<tr><td><strong>Four study regions</strong></td><td><strong>79,886</strong></td><td><strong>72.7</strong></td><td><strong>1,181,479</strong></td><td><strong>75.6</strong></td></tr>
+			<tr><td>Rest of Chile</td><td>30,061</td><td>27.3</td><td>381,391</td><td>24.4</td></tr>
+			<tr><td>National total</td><td>109,947</td><td>100.0</td><td>1,562,870</td><td>100.0</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{Concentration of wildfire activity in the four study regions. CONAF inventory, 2002--2003 to 2019--2020 seasons.}
+\label{tab:study-regions}
+\begin{tabular}{lrrrr}
+\toprule
+Region & Events & Events \% & Burned area (ha) & Burned area \% \\
+\midrule
+Maule      & 10,111 & 9.2  & 386,081   & 24.7 \\
+Biobío     & 45,720 & 41.6 & 356,640   & 22.8 \\
+Araucanía  & 19,689 & 17.9 & 214,572   & 13.7 \\
+O'Higgins  & 4,366  & 4.0  & 224,185   & 14.3 \\
+\midrule
+\textbf{Four study regions} & \textbf{79,886} & \textbf{72.7} & \textbf{1,181,479} & \textbf{75.6} \\
+Rest of Chile               & 30,061 & 27.3 & 381,391   & 24.4 \\
+National total              & 109,947 & 100.0 & 1,562,870 & 100.0 \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
+</section>
+
 <section id="conaf">
-	<h2>III-A. CONAF: Historical Fire Event Records</h2>
+	<h2>III-B. CONAF: Historical Fire Event Records</h2>
 	<p>
 		The primary event inventory is the historical wildfire record maintained by the Chilean National Forestry Corporation
 		(CONAF), distributed through the Datos para Resiliencia platform \cite{conaf_dataset}. The local cleaned version used
@@ -196,7 +270,7 @@
 </section>
 
 <section id="eda">
-	<h2>III-B. Exploratory Analysis of CONAF Records</h2>
+	<h2>III-C. Exploratory Analysis of CONAF Records</h2>
 	<p>
 		The exploratory analysis supports the premise that wildfire impact in Chile is highly concentrated in the upper tail.
 		In the cleaned CONAF inventory, 1,240 events account for 80% of the total burned area, corresponding to approximately
@@ -219,12 +293,14 @@
 </section>
 
 <section id="era5">
-	<h2>III-C. ERA5-Land: Meteorological and Land-Surface Covariates</h2>
+	<h2>III-D. ERA5-Land: Meteorological and Land-Surface Covariates</h2>
 	<p>
 		Each CONAF event is enriched with ERA5-Land covariates at the ignition point and nearest available hourly timestamp.
 		ERA5 provides a physically consistent global reanalysis suitable for retrospective event reconstruction
 		\cite{era5}. The project uses variables selected for fire-weather relevance and for consistency with recent
 		wildfire prediction work using machine learning and explainable AI \cite{zakari2025spatio,liao2025tackling}.
+		ERA5-Land is distributed at approximately 9 km (0.1&deg;) horizontal resolution with hourly temporal sampling
+		\cite{munozsabater2021}.
 	</p>
 	<p>
 		The temporal ERA5-Land variables include 2 m air temperature, 2 m dew-point temperature, 10 m wind components,
@@ -237,12 +313,216 @@
 		The enrichment is formulated as a nearest-neighbor extraction problem. For event <em>i</em>, the location
 		<code>(lat_i, lon_i)</code> and timestamp <code>t_i</code> are matched to the nearest ERA5-Land grid cell and
 		hour. Match quality is retained separately through distance and temporal offset fields so that downstream training
-		can filter or audit events with poor coverage.
+		can filter or audit events with poor coverage. ERA5-Land covariates are extracted only over the study-area domain
+		defined in Section III-A (Maule, Biobío, Araucanía, O'Higgins). Within that domain almost every event obtains a
+		valid match: in the 2016-2017 subset, 8,650 of 8,664 events (99.8%) are matched (median horizontal distance 4.0 km,
+		median temporal offset 0.25 h). CONAF events recorded elsewhere in the national inventory have no ERA5-Land
+		covariates and are flagged as <code>out_of_coverage</code> and excluded from modeling.
 	</p>
+
+	<h3>ERA5-Land Temporal (Hourly) Variables</h3>
+	<p>
+		Table III lists the hourly ERA5-Land variables extracted for every event. All of them are candidate ex-ante
+		predictors. Soil-related fields are resolved at the four standard ERA5-Land layers: L1 (0-7 cm), L2 (7-28 cm),
+		L3 (28-100 cm), and L4 (100-289 cm). Precipitation, radiation, and evaporation fields are reported as hourly
+		accumulations in their native units.
+	</p>
+	<table id="era5-temporal-table">
+		<thead>
+			<tr><th>#</th><th>Variable</th><th>GRIB short name</th><th>CDS long name</th><th>Physical dimension</th><th>Training role</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>1</td><td><code>t2m</code></td><td>2t</td><td>2m_temperature</td><td>K</td><td>feature (ex-ante)</td></tr>
+			<tr><td>2</td><td><code>d2m</code></td><td>2d</td><td>2m_dewpoint_temperature</td><td>K</td><td>feature (ex-ante)</td></tr>
+			<tr><td>3</td><td><code>u10</code></td><td>10u</td><td>10m_u_component_of_wind</td><td>m s⁻¹</td><td>feature (ex-ante)</td></tr>
+			<tr><td>4</td><td><code>v10</code></td><td>10v</td><td>10m_v_component_of_wind</td><td>m s⁻¹</td><td>feature (ex-ante)</td></tr>
+			<tr><td>5</td><td><code>tp</code></td><td>tp</td><td>total_precipitation</td><td>m (hourly accumulation)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>6</td><td><code>ssrd</code></td><td>ssrd</td><td>surface_solar_radiation_downwards</td><td>J m⁻² (hourly accumulation)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>7-10</td><td><code>stl1</code>-<code>stl4</code></td><td>stl1-stl4</td><td>soil_temperature_level_1..4</td><td>K</td><td>feature (ex-ante)</td></tr>
+			<tr><td>11-14</td><td><code>swvl1</code>-<code>swvl4</code></td><td>swvl1-swvl4</td><td>volumetric_soil_water_layer_1..4</td><td>m³ m⁻³</td><td>feature (ex-ante)</td></tr>
+			<tr><td>15</td><td><code>pev</code></td><td>pev</td><td>potential_evaporation</td><td>m (water equivalent)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>16</td><td><code>e</code></td><td>e</td><td>total_evaporation</td><td>m (water equivalent)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>17</td><td><code>evavt</code></td><td>evavt</td><td>evaporation_from_vegetation_transpiration</td><td>m (water equivalent)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>18</td><td><code>lai_hv</code></td><td>lai_hv</td><td>leaf_area_index_high_vegetation</td><td>m² m⁻² (dimensionless)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>19</td><td><code>lai_lv</code></td><td>lai_lv</td><td>leaf_area_index_low_vegetation</td><td>m² m⁻² (dimensionless)</td><td>feature (ex-ante)</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{ERA5-Land temporal (hourly) variables extracted at each event. Soil layers: L1 0--7~cm, L2 7--28~cm, L3 28--100~cm, L4 100--289~cm.}
+\label{tab:era5-temporal}
+\small
+\begin{tabular}{cllll}
+\toprule
+\# & Variable & GRIB & CDS long name & Dimension \\
+\midrule
+1     & \texttt{t2m}            & 2t        & \texttt{2m\_temperature}                          & K \\
+2     & \texttt{d2m}            & 2d        & \texttt{2m\_dewpoint\_temperature}                & K \\
+3     & \texttt{u10}            & 10u       & \texttt{10m\_u\_component\_of\_wind}              & m\,s$^{-1}$ \\
+4     & \texttt{v10}            & 10v       & \texttt{10m\_v\_component\_of\_wind}              & m\,s$^{-1}$ \\
+5     & \texttt{tp}             & tp        & \texttt{total\_precipitation}                     & m (hourly accum.) \\
+6     & \texttt{ssrd}           & ssrd      & \texttt{surface\_solar\_radiation\_downwards}     & J\,m$^{-2}$ (hourly accum.) \\
+7--10 & \texttt{stl1}--\texttt{stl4}   & stl1--stl4   & \texttt{soil\_temperature\_level\_1..4}     & K \\
+11--14& \texttt{swvl1}--\texttt{swvl4} & swvl1--swvl4 & \texttt{volumetric\_soil\_water\_layer\_1..4} & m$^3$\,m$^{-3}$ \\
+15    & \texttt{pev}            & pev       & \texttt{potential\_evaporation}                   & m (water eq.) \\
+16    & \texttt{e}              & e         & \texttt{total\_evaporation}                       & m (water eq.) \\
+17    & \texttt{evavt}          & evavt     & \texttt{evaporation\_from\_vegetation\_transpiration} & m (water eq.) \\
+18    & \texttt{lai\_hv}        & lai\_hv   & \texttt{leaf\_area\_index\_high\_vegetation}      & m$^2$\,m$^{-2}$ \\
+19    & \texttt{lai\_lv}        & lai\_lv   & \texttt{leaf\_area\_index\_low\_vegetation}       & m$^2$\,m$^{-2}$ \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
+
+	<h3>ERA5-Land Static (Invariant) Variables</h3>
+	<p>
+		Table IV lists the time-invariant land-surface variables, joined to each event by spatial nearest neighbor only.
+		Soil type and vegetation type are integer-coded categorical fields; their full code-to-class mappings are given in
+		Section III-D.1. Land-sea mask and vegetation cover are continuous fractions in <code>[0, 1]</code>.
+	</p>
+	<table id="era5-invariant-table">
+		<thead>
+			<tr><th>#</th><th>Variable</th><th>GRIB short name</th><th>CDS long name</th><th>Possible values / dimension</th><th>Training role</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>1</td><td><code>slt</code></td><td>slt</td><td>soil_type</td><td>integer code 1-7 (Table V)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>2</td><td><code>lsm</code></td><td>lsm</td><td>land_sea_mask</td><td>fraction 0-1 (dimensionless)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>3</td><td><code>cvh</code></td><td>cvh</td><td>high_vegetation_cover</td><td>fraction 0-1 (dimensionless)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>4</td><td><code>cvl</code></td><td>cvl</td><td>low_vegetation_cover</td><td>fraction 0-1 (dimensionless)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>5</td><td><code>tvh</code></td><td>tvh</td><td>type_of_high_vegetation</td><td>integer code, high subset (Table VI)</td><td>feature (ex-ante)</td></tr>
+			<tr><td>6</td><td><code>tvl</code></td><td>tvl</td><td>type_of_low_vegetation</td><td>integer code, low subset (Table VI)</td><td>feature (ex-ante)</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{ERA5-Land static (invariant) land-surface variables, joined by spatial nearest neighbor.}
+\label{tab:era5-invariant}
+\small
+\begin{tabular}{cllll}
+\toprule
+\# & Variable & GRIB & CDS long name & Possible values / dimension \\
+\midrule
+1 & \texttt{slt} & slt & \texttt{soil\_type}                 & integer code 1--7 (Table~\ref{tab:soil-type}) \\
+2 & \texttt{lsm} & lsm & \texttt{land\_sea\_mask}            & fraction 0--1 (dimensionless) \\
+3 & \texttt{cvh} & cvh & \texttt{high\_vegetation\_cover}    & fraction 0--1 (dimensionless) \\
+4 & \texttt{cvl} & cvl & \texttt{low\_vegetation\_cover}     & fraction 0--1 (dimensionless) \\
+5 & \texttt{tvh} & tvh & \texttt{type\_of\_high\_vegetation} & integer code (Table~\ref{tab:veg-type}) \\
+6 & \texttt{tvl} & tvl & \texttt{type\_of\_low\_vegetation}  & integer code (Table~\ref{tab:veg-type}) \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
+</section>
+
+<section id="classification">
+	<h2>III-D.1. Static Land-Surface Classification Codes</h2>
+	<p>
+		The soil-type and vegetation-type fields are categorical integer codes inherited from the ECMWF land-surface
+		scheme (H-TESSEL) and are stored without remapping in the pipeline. Tables IV and V give the standard
+		code-to-class definitions used to interpret <code>slt</code>, <code>tvl</code>, and <code>tvh</code>
+		\cite{munozsabater2021,balsamo2009,vandenhurk2000,dickinson1993}. In the Chilean subset the observed ranges are
+		<code>slt</code> in 0-4, <code>tvh</code> in 0-19, and <code>tvl</code> in 0-17, where the code 0 denotes ocean
+		or undefined surface.
+	</p>
+
+	<h3>Soil Type (slt)</h3>
+	<table id="soil-type-table">
+		<thead>
+			<tr><th>Code</th><th>Texture class</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>0</td><td>Ocean / undefined</td></tr>
+			<tr><td>1</td><td>Coarse</td></tr>
+			<tr><td>2</td><td>Medium</td></tr>
+			<tr><td>3</td><td>Medium fine</td></tr>
+			<tr><td>4</td><td>Fine</td></tr>
+			<tr><td>5</td><td>Very fine</td></tr>
+			<tr><td>6</td><td>Organic</td></tr>
+			<tr><td>7</td><td>Tropical organic</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{ECMWF H-TESSEL soil-texture classes for the \texttt{slt} field \citep{balsamo2009,munozsabater2021}.}
+\label{tab:soil-type}
+\begin{tabular}{cl}
+\toprule
+Code & Texture class \\
+\midrule
+0 & Ocean / undefined \\
+1 & Coarse \\
+2 & Medium \\
+3 & Medium fine \\
+4 & Fine \\
+5 & Very fine \\
+6 & Organic \\
+7 & Tropical organic \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
+
+	<h3>Vegetation Type (tvl, tvh)</h3>
+	<table id="veg-type-table">
+		<thead>
+			<tr><th>Code</th><th>Vegetation type</th><th>Stratum</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>1</td><td>Crops, mixed farming</td><td>low</td></tr>
+			<tr><td>2</td><td>Short grass</td><td>low</td></tr>
+			<tr><td>3</td><td>Evergreen needleleaf trees</td><td>high</td></tr>
+			<tr><td>4</td><td>Deciduous needleleaf trees</td><td>high</td></tr>
+			<tr><td>5</td><td>Deciduous broadleaf trees</td><td>high</td></tr>
+			<tr><td>6</td><td>Evergreen broadleaf trees</td><td>high</td></tr>
+			<tr><td>7</td><td>Tall grass</td><td>low</td></tr>
+			<tr><td>8</td><td>Desert</td><td>low</td></tr>
+			<tr><td>9</td><td>Tundra</td><td>low</td></tr>
+			<tr><td>10</td><td>Irrigated crops</td><td>low</td></tr>
+			<tr><td>11</td><td>Semidesert</td><td>low</td></tr>
+			<tr><td>12</td><td>Ice caps and glaciers</td><td>-</td></tr>
+			<tr><td>13</td><td>Bogs and marshes</td><td>low</td></tr>
+			<tr><td>14</td><td>Inland water</td><td>-</td></tr>
+			<tr><td>15</td><td>Ocean</td><td>-</td></tr>
+			<tr><td>16</td><td>Evergreen shrubs</td><td>low</td></tr>
+			<tr><td>17</td><td>Deciduous shrubs</td><td>low</td></tr>
+			<tr><td>18</td><td>Mixed forest / woodland</td><td>high</td></tr>
+			<tr><td>19</td><td>Interrupted forest</td><td>high</td></tr>
+			<tr><td>20</td><td>Water and land mixtures</td><td>low</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{ECMWF TESSEL/BATS vegetation types for the \texttt{tvl} (low) and \texttt{tvh} (high) fields \citep{vandenhurk2000,dickinson1993}.}
+\label{tab:veg-type}
+\small
+\begin{tabular}{clc}
+\toprule
+Code & Vegetation type & Stratum \\
+\midrule
+1  & Crops, mixed farming        & low \\
+2  & Short grass                 & low \\
+3  & Evergreen needleleaf trees  & high \\
+4  & Deciduous needleleaf trees  & high \\
+5  & Deciduous broadleaf trees   & high \\
+6  & Evergreen broadleaf trees   & high \\
+7  & Tall grass                  & low \\
+8  & Desert                      & low \\
+9  & Tundra                      & low \\
+10 & Irrigated crops             & low \\
+11 & Semidesert                  & low \\
+12 & Ice caps and glaciers       & -- \\
+13 & Bogs and marshes            & low \\
+14 & Inland water                & -- \\
+15 & Ocean                       & -- \\
+16 & Evergreen shrubs            & low \\
+17 & Deciduous shrubs            & low \\
+18 & Mixed forest / woodland     & high \\
+19 & Interrupted forest          & high \\
+20 & Water and land mixtures     & low \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
 </section>
 
 <section id="derived">
-	<h2>III-D. Derived Meteorological Variables</h2>
+	<h2>III-E. Derived Meteorological Variables</h2>
 	<p>
 		Several derived variables are computed from the raw ERA5-Land fields to express meteorological mechanisms more
 		directly. Air and soil temperatures are converted from Kelvin to Celsius. Wind speed and wind direction are derived
@@ -258,10 +538,51 @@
 		These transformations preserve the ex-ante nature of the predictors because all inputs are meteorological or
 		land-surface conditions available at or before ignition.
 	</p>
+	<p>
+		Saturation vapor pressure uses the Magnus-Tetens approximation
+		<code>e_s(T) = 6.112 * exp(17.625 * T_C / (T_C + 243.04))</code> in hPa, with coefficients from Alduchov and
+		Eskridge (1996), valid over the -40 to +60 &deg;C range \cite{alduchov1996}. Relative humidity and vapor-pressure
+		deficit are therefore reported in percent and hPa, respectively. Table VII summarizes every derived field.
+	</p>
+	<table id="derived-variable-table">
+		<thead>
+			<tr><th>Output column</th><th>Formula</th><th>Inputs</th><th>Output dimension</th></tr>
+		</thead>
+		<tbody>
+			<tr><td><code>t2m_celsius</code></td><td>T_K &minus; 273.15</td><td><code>t2m</code></td><td>&deg;C</td></tr>
+			<tr><td><code>d2m_celsius</code></td><td>T_K &minus; 273.15</td><td><code>d2m</code></td><td>&deg;C</td></tr>
+			<tr><td><code>stl1_celsius</code>-<code>stl4_celsius</code></td><td>T_K &minus; 273.15</td><td><code>stl1</code>-<code>stl4</code></td><td>&deg;C</td></tr>
+			<tr><td><code>relative_humidity</code></td><td>100 &middot; e_s(T_d) / e_s(T)</td><td><code>t2m</code>, <code>d2m</code></td><td>% (clipped 0-100)</td></tr>
+			<tr><td><code>vpd_hpa</code></td><td>e_s(T) &minus; e_s(T_d)</td><td><code>t2m</code>, <code>d2m</code></td><td>hPa (clipped &ge; 0)</td></tr>
+			<tr><td><code>wind_speed</code></td><td>&radic;(u10&sup2; + v10&sup2;)</td><td><code>u10</code>, <code>v10</code></td><td>m s⁻¹</td></tr>
+			<tr><td><code>wind_direction</code></td><td>(atan2(&minus;u, &minus;v) &middot; 180/&pi; + 360) mod 360</td><td><code>u10</code>, <code>v10</code></td><td>degrees (0=N, 90=E)</td></tr>
+			<tr><td><code>tp_mm</code></td><td>tp &middot; 1000</td><td><code>tp</code></td><td>mm</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{Derived meteorological variables computed from raw ERA5-Land fields. $e_s$ is the Magnus saturation vapor pressure (hPa).}
+\label{tab:derived}
+\small
+\begin{tabular}{llll}
+\toprule
+Output column & Formula & Inputs & Output dimension \\
+\midrule
+\texttt{t2m\_celsius}   & $T_K - 273.15$                       & \texttt{t2m}          & $^\circ$C \\
+\texttt{d2m\_celsius}   & $T_K - 273.15$                       & \texttt{d2m}          & $^\circ$C \\
+\texttt{stl1\_celsius}--\texttt{stl4\_celsius} & $T_K - 273.15$       & \texttt{stl1}--\texttt{stl4} & $^\circ$C \\
+\texttt{relative\_humidity} & $100\,e_s(T_d)/e_s(T)$           & \texttt{t2m}, \texttt{d2m} & \% (clip 0--100) \\
+\texttt{vpd\_hpa}       & $e_s(T) - e_s(T_d)$                  & \texttt{t2m}, \texttt{d2m} & hPa (clip $\geq 0$) \\
+\texttt{wind\_speed}    & $\sqrt{u_{10}^2 + v_{10}^2}$         & \texttt{u10}, \texttt{v10} & m\,s$^{-1}$ \\
+\texttt{wind\_direction}& $(\operatorname{atan2}(-u,-v)\tfrac{180}{\pi} + 360)\bmod 360$ & \texttt{u10}, \texttt{v10} & deg (0=N, 90=E) \\
+\texttt{tp\_mm}         & $tp \cdot 1000$                      & \texttt{tp}           & mm \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
 </section>
 
 <section id="modis">
-	<h2>III-E. MODIS/FIRMS and Label Construction</h2>
+	<h2>III-F. MODIS/FIRMS and Label Construction</h2>
 	<p>
 		The main target follows the Extreme Wildfire Event (EWE) paradigm proposed by Tedim et al. \cite{tedim2018EWE}.
 		In this framing, an extreme fire is not defined only by its final burned area. It is a behavioral and operational
@@ -295,10 +616,49 @@
 		motivate future operational annotation of ROS, spotting distance, flame length, plume behavior, and suppression
 		capacity, not to replace the MODIS/FIRMS target in the current retrospective dataset.
 	</div>
+	<p>
+		The MODIS/FIRMS fields produced by the matching step are retained in the enriched table only for target
+		construction and auditability. Table VIII lists them together with the matching and conversion parameters. All of
+		these columns are excluded from the predictor matrix because they encode post-ignition satellite information.
+	</p>
+	<table id="modis-audit-table">
+		<thead>
+			<tr><th>Column</th><th>Dimension</th><th>Description</th><th>Exclusion reason</th></tr>
+		</thead>
+		<tbody>
+			<tr><td><code>modis_n_matches</code></td><td>count</td><td>Number of MODIS detections within the (5 km, &plusmn;24 h) window.</td><td>ex-post (satellite)</td></tr>
+			<tr><td><code>modis_frp_max_mw</code></td><td>MW</td><td>Maximum Fire Radiative Power among matched detections.</td><td>ex-post</td></tr>
+			<tr><td><code>fli_estimado_kw_m</code></td><td>kW m⁻¹</td><td>Estimated Fire-Line Intensity from FRP (Wooster 2003).</td><td>ex-post / target-derived</td></tr>
+			<tr><td><code>label_l2</code></td><td>binary</td><td>EWE target: 1 if FRP &ge; 1700 MW and burned area &ge; 50 ha.</td><td>target</td></tr>
+		</tbody>
+	</table>
+	<p>
+		Matching and conversion constants: <code>MATCH_RADIUS_KM = 5.0</code>, <code>MATCH_TIME_HOURS = 24.0</code>,
+		<code>RADIANT_FRACTION = 0.17</code>, <code>MODIS_PIXEL_LENGTH_M = 1000</code>,
+		<code>FLI_EWE_THRESHOLD_KW_M = 10000</code>, <code>MIN_AREA_HA_FOR_L2 = 50</code>. The FRP threshold of 1700 MW is
+		the FRP-domain equivalent of the 10,000 kW/m FLI boundary under the peak-local conversion
+		(1000 &middot; 1700 / 0.17 / 1000 = 10000).
+	</p>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{MODIS/FIRMS audit columns retained for target construction and excluded from the predictor matrix.}
+\label{tab:modis-audit}
+\small
+\begin{tabular}{p{0.24\linewidth}llp{0.22\linewidth}}
+\toprule
+Column & Dimension & Description & Exclusion reason \\
+\midrule
+\texttt{modis\_n\_matches}   & count      & MODIS detections within (5\,km, $\pm$24\,h). & ex-post (satellite) \\
+\texttt{modis\_frp\_max\_mw} & MW         & Maximum FRP among matched detections.        & ex-post \\
+\texttt{fli\_estimado\_kw\_m}& kW\,m$^{-1}$ & Estimated FLI from FRP (Wooster 2003).     & ex-post / target-derived \\
+\texttt{label\_l2}           & binary     & EWE target: FRP $\geq$ 1700\,MW and area $\geq$ 50\,ha. & target \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
 </section>
 
 <section id="pipeline">
-	<h2>III-F. Enrichment Pipeline</h2>
+	<h2>III-G. Enrichment Pipeline</h2>
 	<p>
 		The data construction pipeline starts from the cleaned CONAF event table and produces one enriched row per event.
 		First, local ignition date and ignition hour are combined and converted to UTC. Second, the UTC timestamp and
@@ -315,7 +675,7 @@
 </section>
 
 <section id="training">
-	<h2>III-G. Training Dataset</h2>
+	<h2>III-H. Training Dataset</h2>
 	<p>
 		The supervised learning task is defined after ignition: given a reported fire event, estimate whether it will reach
 		the L2 extreme-fire threshold. This is aligned with fire triage and resource-allocation settings in which only
@@ -331,14 +691,99 @@
 		ex-ante predictors available at or before ignition.
 	</p>
 	<p>
-		Final L2 class counts for the intended 2012-2018 training window are <code>PENDING_VERIFICATION</code> until the
-		corresponding enriched parquet is produced locally and audited. Existing partial enriched outputs should be treated
-		as implementation diagnostics rather than as final paper metrics.
+		On the 2016-2017 study-region subset (8,664 events, of which 8,650 have a valid ERA5-Land match, 99.8%),
+		MODIS/FIRMS detections matched 1,234 events (14.2%), and the L2 extreme-fire criterion is satisfied by only 5
+		events (0.06%); all five national L2 positives fall within the study regions. This severe class imbalance is
+		consistent with the EWE definition, under which operationally extreme fires are rare, and it motivates both
+		extending the training window to the 2012-2018 seasons and adopting imbalance-aware training and evaluation. Class
+		counts for the full window remain <code>PENDING_VERIFICATION</code> until the corresponding enriched parquet is
+		produced and audited.
 	</p>
+	<p>
+		The enriched parquet produced by the pipeline contains every column described in this section, including
+		ex-post outcomes and target-construction fields. Feature selection is therefore applied at training time: only
+		the ex-ante columns are kept, and the remaining columns are dropped according to the role classification in
+		Table X. The ignition timestamp is itself not used as a raw feature; instead the cyclical-free ordinal fields in
+		Table IX are derived from it.
+	</p>
+
+	<h3>Ignition-Time Temporal Features</h3>
+	<table id="temporal-feature-table">
+		<thead>
+			<tr><th>Column</th><th>Derivation</th><th>Range</th><th>Training role</th></tr>
+		</thead>
+		<tbody>
+			<tr><td><code>month</code></td><td>timestamp.month</td><td>1-12</td><td>feature (ex-ante)</td></tr>
+			<tr><td><code>hour</code></td><td>timestamp.hour</td><td>0-23</td><td>feature (ex-ante)</td></tr>
+			<tr><td><code>day_of_year</code></td><td>timestamp.day_of_year</td><td>1-366</td><td>feature (ex-ante)</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table}[t]
+\centering
+\caption{Ignition-time temporal features derived from the event timestamp (ordinal, no cyclical encoding).}
+\label{tab:temporal-features}
+\begin{tabular}{lll}
+\toprule
+Column & Derivation & Range \\
+\midrule
+\texttt{month}       & timestamp.month       & 1--12 \\
+\texttt{hour}        & timestamp.hour        & 0--23 \\
+\texttt{day\_of\_year} & timestamp.day\_of\_year & 1--366 \\
+\bottomrule
+\end{tabular}
+\end{table}</code></pre>
+
+	<h3>Feature Matrix Role Classification</h3>
+	<table id="training-role-table">
+		<thead>
+			<tr><th>Role</th><th>Columns</th><th>Rationale</th></tr>
+		</thead>
+		<tbody>
+			<tr><td>Included (ex-ante feature)</td><td>All ERA5-Land temporal variables (Table III); all static variables (Table IV); all derived variables (Table VII); <code>month</code>, <code>hour</code>, <code>day_of_year</code> (Table IX); <code>latitud</code>, <code>longitud</code>; <code>region</code>, <code>provincia</code>, <code>comuna</code></td><td>Available at or before ignition.</td></tr>
+			<tr><td>Excluded - target</td><td><code>superficie_quemada_total_ha</code>, <code>label_l1</code>, <code>label_l2</code>, <code>is_megafire</code></td><td>Prediction targets and their precursors.</td></tr>
+			<tr><td>Excluded - ex-post / leakage</td><td><code>superficie_quemada_*</code> (per fuel class), <code>duracion_minutos</code>, <code>alerta</code>, <code>escenario</code>, <code>causa</code></td><td>Known only after the event develops or after investigation.</td></tr>
+			<tr><td>Excluded - audit</td><td><code>modis_n_matches</code>, <code>modis_frp_max_mw</code>, <code>fli_estimado_kw_m</code>, <code>era5_dist_km</code>, <code>era5_dt_hours</code>, <code>era5_match_quality</code></td><td>Retained for traceability of the target and match quality, not predictive use.</td></tr>
+			<tr><td>Excluded - metadata / id</td><td><code>nombre</code>, <code>temporada</code>, <code>datum</code>, <code>geometry</code>, raw timestamp columns</td><td>Identifiers and non-predictive metadata.</td></tr>
+		</tbody>
+	</table>
+	<pre><code>\begin{table*}[t]
+\centering
+\caption{Role classification applied to the enriched parquet to build the ex-ante predictor matrix.}
+\label{tab:training-roles}
+\small
+\begin{tabular}{p{0.20\linewidth}p{0.50\linewidth}p{0.22\linewidth}}
+\toprule
+Role & Columns & Rationale \\
+\midrule
+Included (ex-ante feature) & All ERA5-Land temporal (Table~\ref{tab:era5-temporal}) and static (Table~\ref{tab:era5-invariant}) variables; all derived variables (Table~\ref{tab:derived}); \texttt{month}, \texttt{hour}, \texttt{day\_of\_year} (Table~\ref{tab:temporal-features}); \texttt{latitud}, \texttt{longitud}; \texttt{region}, \texttt{provincia}, \texttt{comuna} & Available at or before ignition. \\
+Excluded --- target & \texttt{superficie\_quemada\_total\_ha}, \texttt{label\_l1}, \texttt{label\_l2}, \texttt{is\_megafire} & Prediction targets and precursors. \\
+Excluded --- ex-post / leakage & \texttt{superficie\_quemada\_*} (per fuel class), \texttt{duracion\_minutos}, \texttt{alerta}, \texttt{escenario}, \texttt{causa} & Known only after the event develops or after investigation. \\
+Excluded --- audit & \texttt{modis\_n\_matches}, \texttt{modis\_frp\_max\_mw}, \texttt{fli\_estimado\_kw\_m}, \texttt{era5\_dist\_km}, \texttt{era5\_dt\_hours}, \texttt{era5\_match\_quality} & Traceability of target and match quality, not predictive. \\
+Excluded --- metadata / id & \texttt{nombre}, \texttt{temporada}, \texttt{datum}, \texttt{geometry}, raw timestamp columns & Identifiers and non-predictive metadata. \\
+\bottomrule
+\end{tabular}
+\end{table*}</code></pre>
+
+	<h3>III-H.1. Final Feature Set and Selection Process (To Be Defined)</h3>
+	<p>
+		The final set of features fed to the model and the procedure that produces it are still to be defined. This
+		subsection is a placeholder to be completed once the feature-selection experiments are run; the figures and the
+		retained feature list below are pending.
+	</p>
+	<div class="note">
+		<strong>TODO_TRAINING_FEATURE_SELECTION.</strong> Pending items:
+		<ul>
+			<li>Final feature list retained for the model, as a subset of the ex-ante predictors in Table X &mdash; to be defined.</li>
+			<li>Selection process: leakage and ex-post column removal (Table X); coverage filtering (drop <code>out_of_coverage</code> events); encoding of categorical fields (<code>region</code>, <code>provincia</code>, <code>comuna</code>); and treatment of missing values &mdash; to be defined.</li>
+			<li>Redundancy and importance-based pruning (e.g. correlation filtering, model-based feature importance) &mdash; to be defined.</li>
+			<li>Temporal train/validation/test split over the 2012-2018 window and class-imbalance handling &mdash; to be defined.</li>
+			<li>Final feature count and per-feature justification &mdash; <code>PENDING_VERIFICATION</code>.</li>
+		</ul>
+	</div>
 </section>
 
 <section id="limitations">
-	<h2>III-H. Limitations and Future Field Annotation</h2>
+	<h2>III-I. Limitations and Future Field Annotation</h2>
 	<p>
 		The proposed dataset inherits limitations from both administrative fire records and remote sensing. CONAF provides
 		high-value historical event information, but several variables are ex-post operational summaries rather than
@@ -358,7 +803,7 @@
 </section>
 
 <section id="bibtex">
-	<h2>III-I. BibTeX References</h2>
+	<h2>III-J. BibTeX References</h2>
 	<pre><code>@misc{conaf_dataset,
   author       = {{Corporacion Nacional Forestal}},
   title        = {Registro historico de incendios forestales},
@@ -496,6 +941,58 @@
   howpublished = {NASA Earthdata},
   url          = {https://firms.modaps.eosdis.nasa.gov/api/},
   note         = {Accessed 2026-05-25}
+}
+
+@article{munozsabater2021,
+  author  = {Munoz-Sabater, Joaquin and Dutra, Emanuel and Agusti-Panareda, Anna and Albergel, Clement and Arduini, Gabriele and Balsamo, Gianpaolo and Boussetta, Souhail and Choulga, Margarita and Harrigan, Shaun and Hersbach, Hans and Martens, Brecht and Miralles, Diego G. and Piles, Maria and Rodriguez-Fernandez, Nemesio J. and Zsoter, Ervin and Buontempo, Carlo and Thepaut, Jean-Noel},
+  title   = {{ERA5-Land}: a state-of-the-art global reanalysis dataset for land applications},
+  journal = {Earth System Science Data},
+  year    = {2021},
+  volume  = {13},
+  number  = {9},
+  pages   = {4349--4383},
+  doi     = {10.5194/essd-13-4349-2021}
+}
+
+@article{balsamo2009,
+  author  = {Balsamo, Gianpaolo and Beljaars, Anton and Scipal, Klaus and Viterbo, Pedro and van den Hurk, Bart and Hirschi, Martin and Betts, Alan K.},
+  title   = {A revised hydrology for the {ECMWF} model: Verification from field site to terrestrial water storage and impact in the {Integrated Forecast System}},
+  journal = {Journal of Hydrometeorology},
+  year    = {2009},
+  volume  = {10},
+  number  = {3},
+  pages   = {623--643},
+  doi     = {10.1175/2008JHM1068.1}
+}
+
+@techreport{vandenhurk2000,
+  author      = {van den Hurk, Bart J. J. M. and Viterbo, Pedro and Beljaars, Anton C. M. and Betts, Alan K.},
+  title       = {Offline validation of the {ERA40} surface scheme},
+  institution = {European Centre for Medium-Range Weather Forecasts},
+  year        = {2000},
+  number      = {295},
+  type        = {ECMWF Technical Memorandum}
+}
+
+@techreport{dickinson1993,
+  author      = {Dickinson, Robert E. and Henderson-Sellers, Ann and Kennedy, Paul J.},
+  title       = {Biosphere-Atmosphere Transfer Scheme ({BATS}) Version 1e as coupled to the {NCAR} Community Climate Model},
+  institution = {National Center for Atmospheric Research},
+  year        = {1993},
+  number      = {NCAR/TN-387+STR},
+  type        = {NCAR Technical Note},
+  doi         = {10.5065/D67W6959}
+}
+
+@article{alduchov1996,
+  author  = {Alduchov, Oleg A. and Eskridge, Robert E.},
+  title   = {Improved {Magnus} form approximation of saturation vapor pressure},
+  journal = {Journal of Applied Meteorology},
+  year    = {1996},
+  volume  = {35},
+  number  = {4},
+  pages   = {601--609},
+  doi     = {10.1175/1520-0450(1996)035&lt;0601:IMFAOS&gt;2.0.CO;2}
 }</code></pre>
 </section>
 </main>

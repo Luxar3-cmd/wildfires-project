@@ -4,7 +4,8 @@ Fuente: NASA FIRMS Area API (https://firms.modaps.eosdis.nasa.gov/api/area/).
 Producto subyacente: MODIS Thermal Anomalies/Fire Level 2 5-Min Swath 1 km
   (MOD14 Terra / MYD14 Aqua, Collection 6.1). FIRMS expone los fire pixels del
   L2 swath como CSV — preserva el FRP instantáneo de cada detección, insumo de
-  la ecuación de Wooster 2003 (los composites diarios A1/A2 lo promedian y no sirven).
+  la conversión FRP→FLI (Wooster et al. 2003, 2004; los composites diarios A1/A2
+  lo promedian y no sirven).
 Auth: MAP_KEY gratuita (variable de entorno FIRMS_MAP_KEY).
 Rate limit: 5000 transacciones / 10 min.
 
@@ -12,7 +13,7 @@ Flujo:
   1. download_firms_for_conaf(conaf) — descarga CSVs MODIS cubriendo días con eventos (±1d).
   2. load_firms_csvs(paths)          — concatena y normaliza acq_datetime_utc.
   3. match_modis_to_conaf(conaf, m)  — para cada evento, max FRP dentro de (5km, ±24h).
-  4. label_l2(enriched, matches)     — Wooster FRP→FLI + umbral EWE 10.000 kW/m.
+  4. label_l2(enriched, matches)     — FRP→FLI (Wooster et al.) + umbral EWE 10.000 kW/m.
 """
 from __future__ import annotations
 
@@ -31,9 +32,13 @@ logger = logging.getLogger(__name__)
 FIRMS_SOURCE = "MODIS_SP"          # Standard Processing (histórico)
 DAY_RANGE_MAX = 5                  # máximo de días por request (límite API)
 
-# --- Wooster 2003 ---
-RADIANT_FRACTION = 0.17            # fracción radiante default (rango 0.13–0.20)
-MODIS_PIXEL_LENGTH_M = 1000.0      # longitud del frente = tamaño pixel MODIS nadir (1 km)
+# --- Conversión FRP→FLI (marco: Wooster et al. 2003, 2004) ---
+# Wooster establece el marco "lo radiado es una fracción de la intensidad total"
+# y deriva fireline intensity radiativa = FRE / longitud del frente. Los DOS valores
+# de abajo son supuestos del proyecto, NO tomados de Wooster: él advierte que la
+# estimación requiere resolver el frente completo (BIRD ~370 m), no posible con MODIS.
+RADIANT_FRACTION = 0.17            # supuesto: fracción radiante (rango físico 0.10–0.20)
+MODIS_PIXEL_LENGTH_M = 1000.0      # supuesto: longitud del frente = pixel MODIS nadir (1 km).
                                    # Interpretación "peak local": el píxel más caliente del frente
                                    # ↔ su propia longitud. Evita diluir el FRP de 1 píxel sobre el
                                    # frente completo (el área CONAF es acumulada, no instantánea).
@@ -271,7 +276,7 @@ def match_modis_to_conaf(
 
 
 # ============================================================
-# Conversión FRP → FLI (Wooster 2003) y label L2
+# Conversión FRP → FLI (marco Wooster et al. 2003, 2004) y label L2
 # ============================================================
 
 
@@ -280,7 +285,11 @@ def frp_to_fli(
 	front_length_m: float,
 	radiant_fraction: float = RADIANT_FRACTION,
 ) -> float:
-	"""FLI [kW/m] desde FRP [MW] (Wooster 2003).
+	"""FLI [kW/m] desde FRP [MW]; marco Wooster et al. (2003, 2004).
+
+	Wooster deriva fireline intensity radiativa = FRE / longitud del frente; aquí
+	se divide además por la radiant fraction η_r para recuperar la FLI total. El
+	valor de η_r y la longitud nominal de 1 km son supuestos del proyecto.
 
 	FLI [kW/m] = (FRP [MW] · 1000 / η_r) / front_length [m]
 
