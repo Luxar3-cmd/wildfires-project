@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/pipeline.py — Pipeline orchestration: download, enrich, write final parquet
+# =============================================================================
 """Pipeline CONAF + ERA5: descarga, enriquece y produce parquet final."""
 from __future__ import annotations
 

@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    scripts/preprocess.py — CLI: run the CONAF+ERA5(+MODIS) preprocessing pipeline end-to-end
+# =============================================================================
 """CLI de preprocesamiento: descarga CONAF + ERA5 y produce dataset enriquecido.
 
 Uso:

@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/derived_features.py — Derived meteorological features from raw ERA5 (RH, VPD, wind, precip)
+# =============================================================================
 """Features derivadas a partir de las variables crudas de ERA5."""
 from __future__ import annotations
 

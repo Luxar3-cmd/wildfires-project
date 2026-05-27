@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/modis.py — MODIS/FIRMS FRP download, CONAF matching, and L2 label (Tedim 2018)
+# =============================================================================
 """MODIS FIRMS: descarga FRP histórico + matching CONAF + label L2 (Tedim 2018).
 
 Fuente: NASA FIRMS Area API (https://firms.modaps.eosdis.nasa.gov/api/area/).

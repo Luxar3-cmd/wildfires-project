@@ -1,3 +1,9 @@
+# =============================================================================
+# XAI-project — Interpretable Prediction of Mega-Fires in Chile (XGBoost + Tree SHAP)
+# Course:  INF-473 Explainable AI · UTFSM · Prof. Raquel Pezoa Rivera
+# Authors: Eduardo Morales · Octavia Jara · Benjamín Reyes
+# File:    src/reporting.py — Source attribution (CC-BY sidecars) and feature-profile reports
+# =============================================================================
 """Reporting del pipeline: atribución de fuentes y perfil de features.
 
 Dos responsabilidades cohesivas en un solo módulo:
