@@ -22,6 +22,11 @@ seaborn>=0.13
 plotly>=5.18
 folium>=0.15
 
+# ML / XAI
+xgboost>=2.0
+shap>=0.44
+scikit-learn>=1.4
+
 # Config y CLI
 python-dotenv>=1.0
 typer>=0.12
