@@ -16,11 +16,21 @@ from typing import Any
 
 import pandas as pd
 import requests
+import xarray as xr
 
 from src.conaf_loader import CONAF_RAW_DIR, load_conaf
 from src.config import CHILE_BBOX, DATA_PROCESSED, ERA5_RAW_DIR
+from src.derived_features import add_all
 from src.enrichment import enrich_conaf_with_era5
-from src.era5 import download_era5_months, era5_month_path, era5_year_path
+from src.era5 import (
+	EXPECTED_KEYS,
+	MAX_LAND_SNAP_KM,
+	build_land_index,
+	download_era5_months,
+	era5_month_path,
+	era5_year_path,
+	extract_point,
+)
 from src.reporting import attribution_payload, generate_feature_report, write_attribution_sidecar
 
 logger = logging.getLogger(__name__)
@@ -291,4 +301,125 @@ def run_pipeline(
 
 	summary["output"] = _write_outputs(enriched, versioned_path, params)
 	summary["attribution"] = attribution_payload()
+	return summary
+
+
+def backfill_era5_water_cells(
+	parquet_path: Path,
+	era5_dir: Path = ERA5_RAW_DIR,
+	max_land_snap_km: float = MAX_LAND_SNAP_KM,
+	allow_download: bool = True,
+	fill_all: bool = False,
+) -> dict[str, Any]:
+	"""Rellena, in-place y de forma no destructiva, las filas cuyo ERA5 quedó NaN por
+	caer en celda de mar, saltando a la celda de tierra más cercana (≤ max_land_snap_km).
+
+	Idempotente: solo procesa filas con ERA5 ausente y dentro de cobertura; las que ya
+	tienen datos o están `out_of_coverage` se saltan (no se rehace trabajo hecho). Preserva
+	todas las demás filas y columnas (label_l2, modis_*, superficie_*, etc.) — no recomputa
+	MODIS. Reusa los NetCDF en disco; descarga un mes solo si falta y `allow_download`.
+
+	Con `fill_all=True` re-extrae ERA5 de TODAS las filas con cobertura (no solo las NaN):
+	se usa tras deduplicar la grilla para recomputar flags y valores desde celdas reales.
+	"""
+	if not parquet_path.exists():
+		raise FileNotFoundError(f"No existe el parquet a rellenar: {parquet_path}")
+
+	df = pd.read_parquet(parquet_path)
+	n_rows = len(df)
+
+	# Backup no destructivo (no se borra nada)
+	backup_dir = DATA_PROCESSED / ("_backup_pre_dedup_reextract" if fill_all else "_backup_pre_snapping")
+	backup_dir.mkdir(parents=True, exist_ok=True)
+	backup_path = backup_dir / parquet_path.name
+	shutil.copy2(parquet_path, backup_path)
+	logger.info("Backfill: backup creado en %s", backup_path)
+
+	ts_col = _era5_timestamp_col(df)
+	lat_col = next((c for c in ("latitud", "latitude", "lat") if c in df.columns), None)
+	lon_col = next((c for c in ("longitud", "longitude", "lon", "lng") if c in df.columns), None)
+	if not (ts_col and lat_col and lon_col):
+		raise KeyError("El parquet no tiene columnas de timestamp/lat/lon reconocibles")
+	ts = pd.to_datetime(df[ts_col], errors="coerce")
+
+	# Fill set: ERA5 ausente (t2m NaN), NO out_of_coverage y con punto/fecha válidos.
+	# Las filas ya cargadas (t2m presente) se saltan → idempotencia.
+	t2m_nan = pd.to_numeric(df.get("t2m"), errors="coerce").isna()
+	quality = df.get("era5_match_quality")
+	in_coverage = quality.ne("out_of_coverage") if quality is not None else True
+	valid_point = (
+		ts.notna()
+		& pd.to_numeric(df[lat_col], errors="coerce").notna()
+		& pd.to_numeric(df[lon_col], errors="coerce").notna()
+	)
+	fill_mask = (in_coverage & valid_point) if fill_all else (t2m_nan & in_coverage & valid_point)
+	logger.info(
+		"Backfill%s: %d filas candidatas de %d",
+		" (fill_all)" if fill_all else "", int(fill_mask.sum()), n_rows,
+	)
+
+	era5_value_cols = list(EXPECTED_KEYS) + ["era5_dist_km", "era5_dt_hours", "era5_land_snap_km", "era5_match_quality"]
+	for col in era5_value_cols:
+		if col not in df.columns:
+			df[col] = None
+
+	recovered = 0
+	snapped = 0
+	fill_idx = df.index[fill_mask]
+	groups = ts.loc[fill_idx].groupby([ts.loc[fill_idx].dt.year, ts.loc[fill_idx].dt.month])
+
+	for (year, month), idx_ts in groups:
+		year, month = int(year), int(month)
+		group_idx = idx_ts.index
+		nc_path = era5_month_path(year, month, era5_dir)
+		if not nc_path.exists():
+			nc_path = era5_year_path(year, era5_dir)
+		if not nc_path.exists() and allow_download:
+			days = tuple(sorted(set(ts.loc[group_idx].dt.day.astype(int))))
+			logger.info("Backfill: ERA5 faltante %04d-%02d — descargando %d día(s)", year, month, len(days))
+			download_era5_months([(year, month, days)], bbox=_download_bbox(df), out_dir=era5_dir)
+			nc_path = era5_month_path(year, month, era5_dir)
+		if not nc_path.exists():
+			logger.warning("Backfill: sin NetCDF para %04d-%02d — %d filas sin rellenar", year, month, len(group_idx))
+			continue
+
+		with xr.open_dataset(nc_path, chunks={"time": 24}) as ds:
+			land_index = build_land_index(ds)
+			for idx in group_idx:
+				res = extract_point(
+					ds, df.at[idx, lat_col], df.at[idx, lon_col], ts.at[idx],
+					land_index=land_index, max_snap_km=max_land_snap_km,
+				)
+				for col in era5_value_cols:
+					df.at[idx, col] = res.get(col)
+				q = res.get("era5_match_quality")
+				if q in ("good", "land_snapped"):
+					recovered += 1
+				if q == "land_snapped":
+					snapped += 1
+
+	# Recalcula derivadas (idempotente) para que las filas rellenadas tengan RH/VPD/etc.
+	df = add_all(df)
+
+	df.to_parquet(parquet_path)
+	if parquet_path.resolve() != LATEST_PARQUET.resolve():
+		shutil.copy2(parquet_path, LATEST_PARQUET)
+
+	quality_counts = {
+		str(key): int(value)
+		for key, value in df["era5_match_quality"].value_counts(dropna=False).items()
+	}
+	summary = {
+		"parquet": str(parquet_path),
+		"backup": str(backup_path),
+		"rows": n_rows,
+		"candidates": int(fill_mask.sum()),
+		"recovered": recovered,
+		"land_snapped": snapped,
+		"era5_match_quality": quality_counts,
+	}
+	logger.info(
+		"Backfill listo: %d recuperadas (%d por salto a tierra) de %d candidatas",
+		recovered, snapped, int(fill_mask.sum()),
+	)
 	return summary

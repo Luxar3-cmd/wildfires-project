@@ -12,6 +12,7 @@ data/runs/
 *.grib
 *.grib2
 *.parquet
+*.tar.gz
 *.geojson
 *.shp
 *.shx
@@ -48,3 +49,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Viz: deps descargadas (React UMD) e intermedio; pipeline_viz.html es autocontenido
+viz/_vendor/
+viz/viz_data.json
