@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import zipfile
 from calendar import monthrange
 from pathlib import Path
@@ -34,6 +35,7 @@ import numpy as np
 import pandas as pd
 import requests
 import xarray as xr
+from scipy.spatial import cKDTree
 
 from src.config import (
 	CDSAPI_KEY,
@@ -64,6 +66,17 @@ ALL_HOURS = [f"{h:02d}:00" for h in range(24)]
 # MAX_TIME_HOURS=2 tolera desfases horarios típicos al redondear timestamps de incendio.
 MAX_DIST_KM = 25.0
 MAX_TIME_HOURS = 2.0
+
+# Tope para el "salto a tierra" (land snapping): ERA5-Land es un producto solo-tierra,
+# así que las celdas sobre mar son NaN. Un incendio costero cuya celda más cercana es de
+# mar puede recuperar la met de la celda de tierra más cercana si está a ≤ este umbral.
+MAX_LAND_SNAP_KM = 6.0
+
+# Decimales a los que se redondea la grilla lat/lon antes de fusionar lotes (xr.merge).
+# El step nativo de ERA5-Land es 0.1° ≫ 1e-5, así que 5 decimales eliminan las
+# diferencias de ULP de float64 entre lotes —que de otro modo duplican columnas de
+# longitud (una real + una gemela all-NaN)— sin fusionar celdas reales distintas.
+GRID_DECIMALS = 5
 
 # VAR_RENAMES mapea tanto los short-names de xarray (e.g. "t2m") como los long-names
 # del API de CDS (e.g. "2m_temperature") al mismo identificador de columna.
@@ -216,11 +229,19 @@ def _retrieve(request: dict, target: Path) -> None:
 
 
 def _normalize_lon(ds):
-	"""Convierte longitudes en convención 0-360 a -180/180 y ordena."""
+	"""Convierte longitudes 0-360 → -180/180, redondea lat/lon a GRID_DECIMALS y ordena.
+
+	El redondeo + reasignación deja las grillas de todos los lotes bit-idénticas, de modo
+	que xr.merge(join='outer') ya no crea columnas de longitud duplicadas por diferencias
+	de ULP de float64. Único punto por el que pasan todos los datasets antes de ambos merge.
+	"""
 	lon = ds["longitude"].values
 	if (lon > 180).any():
-		ds = ds.assign_coords(longitude=np.where(lon > 180, lon - 360, lon)).sortby("longitude")
-	return ds
+		lon = np.where(lon > 180, lon - 360, lon)
+	ds = ds.assign_coords(longitude=np.round(lon, GRID_DECIMALS))
+	if "latitude" in ds.coords:
+		ds = ds.assign_coords(latitude=np.round(ds["latitude"].values, GRID_DECIMALS))
+	return ds.sortby("longitude")
 
 
 def _unzip_if_needed(path: Path) -> None:
@@ -265,6 +286,58 @@ def _unzip_if_needed(path: Path) -> None:
 				p.unlink(missing_ok=True)
 		merged.rename(path)
 	logger.info("ZIP extraído → %s", path.name)
+
+
+def deduplicate_lon(
+	path: Path,
+	backup_dir: Path | None = None,
+	ref_var: str = "t2m",
+	decimals: int = GRID_DECIMALS,
+) -> dict:
+	"""Deduplica la grilla de longitud de un NetCDF ERA5: in-place, lossless e idempotente.
+
+	El xr.merge de los lotes descargados del CDS (longitudes que difieren por ULP de
+	float64) duplica cada columna de longitud: una con datos + su gemela 100% NaN. Aquí,
+	por cada longitud única (redondeada a `decimals`) se conserva la columna con datos y se
+	descarta la fantasma. Preserva el encoding (compresión/packing) del original y hace
+	backup no destructivo antes de reescribir. Si el archivo ya está limpio, no hace nada.
+	"""
+	with xr.open_dataset(path) as ds:
+		lon = ds["longitude"].values
+		lon_r = np.round(lon, decimals)
+		uniq = np.unique(lon_r)
+		if uniq.size == lon.size:
+			return {"path": str(path), "skipped": True, "n_lon": int(lon.size)}
+
+		ref_name = next((v for v in ds.data_vars if VAR_RENAMES.get(v, v) == ref_var), None) \
+			or next(iter(ds.data_vars))
+		ref = ds[ref_name]
+		ghost = ref.isnull().all(dim=[d for d in ref.dims if d != "longitude"]).values
+
+		keep: list[int] = []
+		for u in uniq:
+			twins = np.where(lon_r == u)[0]
+			real = [int(j) for j in twins if not ghost[j]]
+			keep.append(real[0] if real else int(twins[0]))
+
+		clean = ds.isel(longitude=keep).load()
+
+	clean = clean.assign_coords(longitude=np.round(clean["longitude"].values, decimals))
+	# Compresión zlib uniforme: evita inflar el disco sin arriesgar el packing original
+	# (copiar dtype/scale_factor del NetCDF leído puede truncar datos o pasar claves inválidas).
+	enc = {v: {"zlib": True, "complevel": 4} for v in clean.data_vars}
+
+	if backup_dir is not None:
+		backup_dir.mkdir(parents=True, exist_ok=True)
+		shutil.copy2(path, backup_dir / path.name)
+	tmp = path.with_suffix(".dedup.tmp.nc")
+	clean.to_netcdf(tmp, engine="netcdf4", encoding=enc)
+	clean.close()
+	tmp.replace(path)
+	return {
+		"path": str(path), "skipped": False, "n_lon": int(lon.size),
+		"n_unique": int(uniq.size), "removed": int(lon.size - len(keep)),
+	}
 
 
 def _var_batches(variables: list[str], batch_size: int) -> list[list[str]]:
@@ -466,8 +539,53 @@ def _nan_result() -> dict:
 	out = {k: None for k in EXPECTED_KEYS}
 	out["era5_dist_km"] = None
 	out["era5_dt_hours"] = None
+	out["era5_land_snap_km"] = None
 	out["era5_match_quality"] = "missing"
 	return out
+
+
+def build_land_index(ds: xr.Dataset, ref_var: str = "t2m"):
+	"""Construye un buscador de la celda de tierra (valor no-NaN) más cercana.
+
+	ERA5-Land es un producto solo-tierra: las celdas sobre mar son NaN. Para un
+	punto cuyo grid cell más cercano cae en mar, este índice devuelve la celda de
+	tierra más cercana y su distancia haversine, habilitando el "salto a tierra"
+	(land snapping) en extract_point. Se construye una sola vez por NetCDF.
+
+	Devuelve una función nearest_land(lat, lon) -> (lat, lon, dist_km), o None si la
+	variable de referencia no existe o no hay celdas de tierra en el NetCDF.
+	"""
+	ref_name = next((v for v in ds.data_vars if VAR_RENAMES.get(v, v) == ref_var), None)
+	if ref_name is None:
+		return None
+	lat_name = "latitude" if "latitude" in ds.coords else "lat"
+	lon_name = "longitude" if "longitude" in ds.coords else "lon"
+
+	da = ds[ref_name]
+	# Una celda es "tierra" si tiene dato en al menos un timestep.
+	reduce_dims = [d for d in da.dims if d not in (lat_name, lon_name)]
+	land2d = da.notnull().any(dim=reduce_dims) if reduce_dims else da.notnull()
+
+	lats = ds[lat_name].values
+	lons = ds[lon_name].values
+	grid_lat, grid_lon = np.meshgrid(lats, lons, indexing="ij")
+	mask = np.asarray(land2d.values, dtype=bool)
+	if not mask.any():
+		return None
+
+	land_lat = grid_lat[mask]
+	land_lon = grid_lon[mask]
+	# KDTree en proyección equirectangular (lon escalada por cos(lat medio)) para el
+	# vecino; el km exacto y el tope se calculan luego con haversine real.
+	coslat = np.cos(np.radians(float(np.mean(lats)))) or 1.0
+	tree = cKDTree(np.column_stack([land_lat, land_lon * coslat]))
+
+	def nearest_land(lat: float, lon: float) -> tuple[float, float, float]:
+		_, i = tree.query([lat, lon * coslat])
+		llat, llon = float(land_lat[i]), float(land_lon[i])
+		return llat, llon, _haversine_km(lat, lon, llat, llon)
+
+	return nearest_land
 
 
 def extract_point(
@@ -475,13 +593,21 @@ def extract_point(
 	lat: float,
 	lon: float,
 	ts: pd.Timestamp,
+	land_index=None,
+	max_snap_km: float = MAX_LAND_SNAP_KM,
 ) -> dict:
 	"""Extrae los valores de ERA5 en el grid point y timestamp más cercano.
 
 	Usa selección nearest-neighbor en las tres dimensiones (lat, lon, time).
 	El dict de retorno siempre contiene todas las claves de EXPECTED_KEYS
-	(con None si la variable no está en el NetCDF) más las métricas de calidad
-	del match: era5_dist_km, era5_dt_hours, era5_match_quality.
+	(con None si la variable no está en el NetCDF) más las métricas de calidad del
+	match: era5_dist_km, era5_dt_hours, era5_land_snap_km, era5_match_quality.
+
+	Salto a tierra (land snapping): si la celda más cercana cae en mar (t2m NaN) y se
+	pasa `land_index` (de build_land_index), se reintenta en la celda de tierra más
+	cercana siempre que esté a ≤ MAX_LAND_SNAP_KM; la distancia del salto queda en
+	era5_land_snap_km. La flag refleja si efectivamente hay valor: good (directo) /
+	land_snapped (recuperado) / water (mar sin tierra dentro del tope) / poor (tiempo lejano).
 	"""
 	if pd.isna(lat) or pd.isna(lon):
 		return _nan_result()
@@ -495,13 +621,33 @@ def extract_point(
 	lat_name = "latitude" if "latitude" in ds.coords else "lat"
 	lon_name = "longitude" if "longitude" in ds.coords else "lon"
 
-	try:
-		point = ds.sel(
-			{lat_name: lat, lon_name: lon, time_name: query_ts.to_datetime64()},
+	def _select(plat: float, plon: float):
+		return ds.sel(
+			{lat_name: plat, lon_name: plon, time_name: query_ts.to_datetime64()},
 			method="nearest",
 		)
+
+	try:
+		point = _select(lat, lon)
 	except Exception:
 		return _nan_result()
+
+	# Variable de referencia (t2m) para detectar celda de mar (NaN) y decidir el salto.
+	ref_name = next((v for v in ds.data_vars if VAR_RENAMES.get(v, v) == "t2m"), None)
+	if ref_name is None and len(ds.data_vars):
+		ref_name = next(iter(ds.data_vars))
+
+	snap_km = 0.0
+	if ref_name is not None and land_index is not None:
+		ref_val = point[ref_name].values
+		if np.ndim(ref_val) == 0 and np.isnan(ref_val):
+			snapped = land_index(lat, lon)
+			if snapped is not None and snapped[2] <= max_snap_km:
+				try:
+					point = _select(snapped[0], snapped[1])
+					snap_km = snapped[2]
+				except Exception:
+					snap_km = 0.0
 
 	out: dict = {}
 	for var in ds.data_vars:
@@ -509,7 +655,7 @@ def extract_point(
 		val = point[var].values
 		out[key] = float(val) if np.ndim(val) == 0 and not np.isnan(val) else (None if np.isnan(val) else float(val))
 
-	# Métricas de calidad del match nearest-neighbor
+	# Métricas de calidad del match nearest-neighbor (sobre la celda finalmente usada)
 	matched_lat = float(point[lat_name].values)
 	matched_lon = float(point[lon_name].values)
 	dist_km = _haversine_km(lat, lon, matched_lat, matched_lon)
@@ -519,9 +665,22 @@ def extract_point(
 
 	out["era5_dist_km"] = round(dist_km, 3)
 	out["era5_dt_hours"] = round(dt_hours, 3)
-	out["era5_match_quality"] = (
-		"good" if (dist_km <= MAX_DIST_KM and dt_hours <= MAX_TIME_HOURS) else "poor"
-	)
+	out["era5_land_snap_km"] = round(snap_km, 3)
+
+	# Flag honesta: refleja si hay valor real, no solo la geometría del match.
+	ref_key = VAR_RENAMES.get(ref_name, ref_name) if ref_name is not None else None
+	has_value = ref_key is not None and out.get(ref_key) is not None
+	if not has_value:
+		quality = "water"
+	elif dt_hours > MAX_TIME_HOURS:
+		quality = "poor"
+	elif snap_km > 0:
+		quality = "land_snapped"
+	elif dist_km <= MAX_DIST_KM:
+		quality = "good"
+	else:
+		quality = "poor"
+	out["era5_match_quality"] = quality
 
 	# Garantiza que todas las claves esperadas existan aunque no estén en el NetCDF
 	for k in EXPECTED_KEYS:
@@ -586,11 +745,14 @@ __all__ = [
 	"era5_year_path",
 	"era5_month_path",
 	"era5_invariants_path",
+	"deduplicate_lon",
 	# Extracción
 	"extract_point",
 	"extract_invariant_point",
+	"build_land_index",
 	"EXPECTED_KEYS",
 	"INVARIANT_KEYS",
 	"MAX_DIST_KM",
 	"MAX_TIME_HOURS",
+	"MAX_LAND_SNAP_KM",
 ]

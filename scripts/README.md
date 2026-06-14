@@ -4,7 +4,7 @@
 
 | Archivo | Rol |
 |---|---|
-| `preprocess.py` | Pipeline completo CONAF + ERA5 → parquet enriquecido + sidecars. Con `--download-only` baja ERA5 acotado a los días con eventos CONAF sin enriquecer. |
+| `preprocess.py` | Pipeline completo CONAF + ERA5 → parquet enriquecido + sidecars. Con `--download-only` baja ERA5 acotado a los días con eventos CONAF sin enriquecer. Con `--backfill` rellena (no destructivo, idempotente) las celdas ERA5 que cayeron en mar saltando a la celda de tierra más cercana, preservando `label_l2`/`modis_*`. |
 | `megafire_thresholds.py` | Calcula umbrales estadísticos de megaincendio (P95/P98/P99, log-normal `μ+kσ`, Pareto-80%, benchmarks 200/500/1000 ha) sobre `data/processed/conaf_enriched_latest.parquet`. Genera tabla impresa + `data/processed/megafire_thresholds.md`. |
 
 ## Ejemplos
@@ -18,6 +18,9 @@ python scripts/preprocess.py --years 2018-2018 --download-only --era5-dir data/r
 
 # Re-enriquecer asumiendo que los NetCDF ya están en disco
 python scripts/preprocess.py --years 2016-2017 --skip-download
+
+# Rellenar celdas ERA5 sobre mar (salto a tierra) en un parquet ya consolidado, sin re-descargar
+python scripts/preprocess.py --years 2012-2018 --backfill --max-snap-km 6
 
 # Forzar re-descarga del CSV CONAF (ignora cache .parquet)
 python scripts/preprocess.py --years 2016-2017 --refresh-conaf

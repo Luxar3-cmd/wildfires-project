@@ -26,13 +26,15 @@ if str(ROOT) not in sys.path:
 
 from src.conaf_loader import load_conaf  # noqa: E402
 from src.config import ERA5_RAW_DIR  # noqa: E402
-from src.era5 import download_era5_invariants, download_era5_months  # noqa: E402
+from src.era5 import MAX_LAND_SNAP_KM, deduplicate_lon, download_era5_invariants, download_era5_months  # noqa: E402
 from src.pipeline import (  # noqa: E402
 	_download_bbox,
 	_needed_year_months,
+	backfill_era5_water_cells,
 	filter_conaf_years,
 	parse_year_range,
 	run_pipeline,
+	versioned_output_path,
 )
 
 app = typer.Typer(add_completion=False, help="Preprocesamiento CONAF + ERA5")
@@ -77,12 +79,55 @@ def main(
 	refresh_conaf: bool = typer.Option(False, "--refresh-conaf", help="Re-descarga CONAF aunque haya cache"),
 	out: Path | None = typer.Option(None, "--out", help="Ruta parquet opcional para el output versionado"),
 	era5_dir: Path | None = typer.Option(None, "--era5-dir", help="Directorio ERA5 (default: data/raw/era5/)"),
+	backfill: bool = typer.Option(False, "--backfill", help="Rellena (no destructivo) celdas ERA5 NaN sobre mar saltando a tierra; preserva label_l2/modis"),
+	max_snap_km: float = typer.Option(MAX_LAND_SNAP_KM, "--max-snap-km", help="Tope del salto a tierra en km (default 6)"),
+	no_download: bool = typer.Option(False, "--no-download", help="En backfill, no descargar ERA5 aunque falte algún mes"),
+	fill_all: bool = typer.Option(False, "--fill-all", help="Con --backfill: re-extrae ERA5 de TODAS las filas con cobertura (tras dedup), no solo las NaN"),
+	dedup: bool = typer.Option(False, "--dedup", help="Deduplica la grilla de longitud de los .nc en era5-dir (columnas fantasma del merge); no enriquece"),
 ):
 	"""Pipeline completo: CONAF → ERA5 → dataset enriquecido."""
 	try:
 		start_year, end_year = parse_year_range(years)
 	except ValueError as e:
 		raise typer.BadParameter(str(e)) from e
+
+	if dedup:
+		target_dir = era5_dir or ERA5_RAW_DIR
+		backup = target_dir / "_backup_pre_dedup"
+		files = sorted(target_dir.glob("*.nc"))
+		if not files:
+			raise typer.BadParameter(f"No hay .nc en {target_dir}")
+		cleaned = 0
+		for p in files:
+			res = deduplicate_lon(p, backup_dir=backup)
+			if not res.get("skipped"):
+				cleaned += 1
+				typer.echo(f"  {p.name}: {res['n_lon']}→{res['n_unique']} lon ({res['removed']} fantasma)")
+		typer.secho(
+			f"Dedup: {cleaned}/{len(files)} archivos limpiados (resto ya limpios). Backup: {backup}",
+			fg=typer.colors.GREEN,
+		)
+		return
+
+	if backfill:
+		if download_only:
+			raise typer.BadParameter("--backfill y --download-only son incompatibles")
+		parquet = out or versioned_output_path(start_year, end_year)
+		summary = backfill_era5_water_cells(
+			parquet,
+			era5_dir=era5_dir or ERA5_RAW_DIR,
+			max_land_snap_km=max_snap_km,
+			allow_download=not no_download,
+			fill_all=fill_all,
+		)
+		typer.secho(
+			f"Backfill listo: {summary['recovered']} filas recuperadas "
+			f"({summary['land_snapped']} por salto a tierra) de {summary['candidates']} candidatas",
+			fg=typer.colors.GREEN,
+		)
+		typer.echo(f"Parquet: {summary['parquet']} | backup: {summary['backup']}")
+		typer.echo(f"era5_match_quality: {summary['era5_match_quality']}")
+		return
 
 	if download_only:
 		if skip_download:

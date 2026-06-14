@@ -26,6 +26,7 @@ folium>=0.15
 xgboost>=2.0
 shap>=0.44
 scikit-learn>=1.4
+quantus==0.6.0    # fidelidad de explicaciones (Faithfulness Correlation / Estimate); pin exacto por monkey-patch de internals
 
 # Config y CLI
 python-dotenv>=1.0

@@ -27,6 +27,7 @@ from src.derived_features import add_all
 from src.era5 import (
 	EXPECTED_KEYS,
 	INVARIANT_KEYS,
+	build_land_index,
 	era5_invariants_path,
 	era5_month_path,
 	era5_year_path,
@@ -113,6 +114,7 @@ def enrich_conaf_with_era5(
 			results[idx] = {k: None for k in EXPECTED_KEYS} | {
 				"era5_dist_km": None,
 				"era5_dt_hours": None,
+				"era5_land_snap_km": None,
 				"era5_match_quality": "out_of_coverage",
 			}
 		logger.warning(
@@ -138,26 +140,29 @@ def enrich_conaf_with_era5(
 				results[idx] = {k: None for k in EXPECTED_KEYS} | {
 					"era5_dist_km": None,
 					"era5_dt_hours": None,
+					"era5_land_snap_km": None,
 					"era5_match_quality": "missing",
 				}
 			continue
 
 		logger.info("Abriendo %s y enriqueciendo %d incendios de %04d-%02d", nc_path.name, len(group), year, month)
 		with xr.open_dataset(nc_path, chunks={"time": 24}) as ds:
+			land_index = build_land_index(ds)
 			for idx, row in tqdm(group.iterrows(), total=len(group), desc=f"ERA5 {year}-{month:02d}"):
-				results[idx] = extract_point(ds, row[lat_col], row[lon_col], row[ts_col])
+				results[idx] = extract_point(ds, row[lat_col], row[lon_col], row[ts_col], land_index=land_index)
 
 	# Rellena cualquier registro que haya quedado sin resultado
 	missing_template = {k: None for k in EXPECTED_KEYS} | {
 		"era5_dist_km": None,
 		"era5_dt_hours": None,
+		"era5_land_snap_km": None,
 		"era5_match_quality": "missing",
 	}
 	for idx in df.index:
 		if results[idx] is None:
 			results[idx] = missing_template
 
-	era5_cols = EXPECTED_KEYS + ["era5_dist_km", "era5_dt_hours", "era5_match_quality"]
+	era5_cols = EXPECTED_KEYS + ["era5_dist_km", "era5_dt_hours", "era5_land_snap_km", "era5_match_quality"]
 	era5_df = pd.DataFrame(results, index=df.index).reindex(columns=era5_cols)
 	enriched = pd.concat([df.drop(columns=["_year", "_month"]), era5_df], axis=1)
 

@@ -44,17 +44,17 @@ XAI-project/
 │   ├── 01_conaf_eda.ipynb            # CONAF EDA 2002–2020 (heavy-tail, maps, seasonality)
 │   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
 ├── modeling/
-│   └── 01_xgboost_baseline.ipynb     # L1 baseline: XGBoost + Tree SHAP (preliminary results)
+│   ├── 01_xgboost_baseline.ipynb     # L1 baseline: XGBoost + Tree SHAP (preliminary results)
+│   └── 02_l1_vs_l2_experiment.py     # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
 ├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
-├── data/                     # gitignored (datasets) — see data/spec.md for ERA5 variables
+├── data/                     # gitignored (datasets)
 │   ├── raw/ · interim/ · processed/ · models/ · archive/
 ├── latex/                    # IEEE paper (Overleaf source + main.pdf)
 ├── references/               # Reference PDFs
 ├── requirements.txt · Makefile · .env.example
 ```
 
-Supplementary docs (Spanish): [`src/README.md`](src/README.md) (pipeline spec), [`scripts/README.md`](scripts/README.md)
-(CLI), [`data/spec.md`](data/spec.md) (ERA5-Land variables and derived-feature formulas).
+Supplementary docs (Spanish): [`src/README.md`](src/README.md) (pipeline spec), [`scripts/README.md`](scripts/README.md) (CLI).
 
 ---
 
@@ -91,9 +91,13 @@ Supplementary docs (Spanish): [`src/README.md`](src/README.md) (pipeline spec), 
                  (heavy-tail, labels)          XGBoost + Tree SHAP (L1)
 ```
 
-**Labels.** *L1* — area-based mega-fire (`superficie_quemada_total_ha ≥ 1,000`), the target of the current
-baseline. *L2* — Extreme Wildfire Event via FRP→FLI conversion (≥ 10,000 kW/m, Tedim 2018) with a MODIS
-detection guard; still in progress.
+**Labels.** *L1* — area-based mega-fire (`superficie_quemada_total_ha ≥ 1,000`): a coarse but direct label.
+*L2* — a physically grounded approximation of an Extreme Wildfire Event (EWE), via FRP→FLI conversion
+(Wooster et al. 2003, 2004; threshold ≥ 10,000 kW/m) with a MODIS-detection / area ≥ 50 ha guard, computed in
+`src/modis.py`. **Limitation:** the full EWE definition (the standard CONAF adheres to) also requires *spread
+rate* and *spot distance*, which are only measurable in situ; here only FRP is available. **Research question:**
+is the easy-to-compute L1 (area) a valid proxy for L2 (intensity)? The `modeling/02` experiment contrasts both
+and finds their explanations are not consistent in some cases.
 
 ---
 
@@ -134,6 +138,7 @@ python scripts/preprocess.py --years 2002-2002 --skip-download
 # 2. Full preprocessing (downloads CONAF + ERA5-Land + MODIS, then enriches)
 python scripts/preprocess.py --years 2016-2017          # subset used by the baseline
 #    flags: --skip-download | --download-only | --refresh-conaf | --skip-modis | --out PATH
+#    --backfill: rellena celdas ERA5 sobre mar (salto a tierra ≤6 km) en un parquet ya hecho, no destructivo
 
 # 3. Per-region mega-fire thresholds (writes data/processed/megafire_thresholds.md)
 python scripts/megafire_thresholds.py
@@ -150,21 +155,20 @@ notebooks can run without re-downloading the source APIs.
 
 ---
 
-## Results summary (preliminary)
+## Results summary (work in progress)
 
-L1 baseline (XGBoost, stratified 5-fold CV) on the 2016–2017 subset of four south-central regions
-(Maule, Biobío, Araucanía, O'Higgins): 8,650 events with valid ERA5 coverage, 42 mega-fires
-(`≥ 1,000` ha, prevalence 0.49%).
+Work has moved from the 2016–2017 L1 baseline to the **2012–2018** dataset, with the current focus on the
+**L1 vs L2 study** (`modeling/02_l1_vs_l2_experiment.py`). That experiment (a) contrasts the drivers of fire
+*area* (L1) vs *intensity* (L2) with Tree SHAP, and (b) measures how faithful the explanations are with
+**Quantus** — Faithfulness Correlation (Bhatt et al., 2020) and Faithfulness Estimate (Alvarez-Melis &
+Jaakkola, 2018).
 
-| Metric | Value |
-|---|---|
-| ROC-AUC | 0.947 ± 0.025 |
-| PR-AUC (average precision) | 0.269 ± 0.076 |
-| PR-AUC baseline (prevalence) | 0.0049 |
+Preliminary finding: the L1 and L2 explanations are **not consistent** in some cases, suggesting that, given
+the labelling limitation (only FRP is available, not in-situ spread rate / spot distance), better models will
+require in-situ measurement mechanisms/policies rather than area as a proxy for intensity.
 
-Top Tree SHAP drivers: soil temperature (`stl2`), seasonality (`day_of_year`), and total evaporation
-(`e`) — a physically coherent, environment-dominated signal. Full analysis, figures, and discussion are
-in [`latex/main.pdf`](latex/main.pdf).
+Honest performance metrics are reported out-of-fold (stratified CV); full analysis, figures, and discussion
+go in [`latex/main.pdf`](latex/main.pdf).
 
 ---
 
@@ -178,7 +182,7 @@ validated the output, made the modeling and scientific decisions, and are respon
 |---|---|---|
 | **Data pipeline** (`src/`, `scripts/`) | Implementation of modules (download, enrichment, reporting), CLI scaffolding, refactors | Architecture, data-source choices, validation against source APIs |
 | **EDA** (notebooks) | Drafting analysis code and visualizations (heavy-tail, maps, seasonality) | Interpretation, framing, conclusions |
-| **Model + XAI** | XGBoost baseline, cross-validation, Tree SHAP, figure generation | Threshold/feature choices, leakage control, reading of explanations |
+| **Model + XAI** | XGBoost baseline, cross-validation, Tree SHAP, Quantus faithfulness, figure generation | Threshold/feature choices, leakage control, reading of explanations |
 | **Paper + documentation** | LaTeX drafting/editing, this README, formatting | Authorship, claims, review, citations |
 | **SOTA / literature research** | Searching and summarizing related work (incl. Google Scholar) | Source selection, critical reading, citation decisions |
 
