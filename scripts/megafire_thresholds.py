@@ -18,16 +18,29 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-ROOT = Path(__file__).parent.parent
-PARQUET = ROOT / "data" / "processed" / "conaf_enriched_latest.parquet"
-OUT_MD = ROOT / "data" / "processed" / "megafire_thresholds.md"
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from src.config import DATA_PROCESSED  # noqa: E402
+
+PARQUET = DATA_PROCESSED / "conaf_enriched_latest.parquet"
+OUT_MD = DATA_PROCESSED / "megafire_thresholds.md"
 
 BENCHMARKS = [200, 500, 1000]   # ha — anclas de literatura internacional
 MIN_EVENTS = 50                  # mínimo para clasificar como muestra suficiente
 
 
 def compute_thresholds(series: pd.Series) -> dict:
-    """Aplica los 4 métodos sobre una serie de hectáreas positivas."""
+    """Calcula umbrales de megaincendio sobre una serie de hectáreas.
+
+    Aplica los cuatro métodos (percentiles P95/98/99, log-normal μ+kσ, Pareto-80%
+    y ranking de los benchmarks de literatura) y deriva un umbral recomendado.
+
+    Args:
+        series: Serie de superficie quemada (ha); se filtran los valores > 0.
+
+    Returns:
+        Diccionario con los umbrales por método, los conteos y el umbral recomendado.
+    """
     pos = series[series > 0].dropna()
     n = len(pos)
     total_area = pos.sum()
@@ -78,6 +91,14 @@ def compute_thresholds(series: pd.Series) -> dict:
 
 
 def build_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Construye la tabla de umbrales: una fila global y una por región.
+
+    Args:
+        df: DataFrame de eventos con ``superficie_quemada_total_ha`` y ``region``.
+
+    Returns:
+        DataFrame con la fila GLOBAL y una por región, en el orden de columnas del reporte.
+    """
     col = "superficie_quemada_total_ha"
     rows = []
 
@@ -106,6 +127,11 @@ def build_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def save_markdown(table: pd.DataFrame) -> None:
+    """Escribe la tabla de umbrales como reporte Markdown en ``OUT_MD``.
+
+    Args:
+        table: Tabla de umbrales producida por :func:`build_table`.
+    """
     OUT_MD.parent.mkdir(parents=True, exist_ok=True)
     n_total = int(table.loc[table["region"] == "GLOBAL", "n_total"].iloc[0])
     lines = [
@@ -156,6 +182,7 @@ def save_markdown(table: pd.DataFrame) -> None:
 
 
 def main():
+    """Carga el parquet enriquecido, calcula los umbrales e imprime/guarda el informe."""
     if not PARQUET.exists():
         print(f"ERROR: no se encontró {PARQUET}", file=sys.stderr)
         sys.exit(1)

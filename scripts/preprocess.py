@@ -48,7 +48,17 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def _download_only(start_year: int, end_year: int, era5_dir: Path) -> None:
-	"""Descarga ERA5 acotado a los días con eventos CONAF, sin enriquecer."""
+	"""Descarga ERA5 acotado a los días con eventos CONAF, sin enriquecer.
+
+	Carga y filtra CONAF por rango de años, deriva los meses/días con eventos
+	y el bbox, e imprime un resumen antes de descargar los .nc mensuales y los
+	invariantes ERA5 al directorio destino.
+
+	Args:
+		start_year: Primer año del rango (inclusive).
+		end_year: Último año del rango (inclusive).
+		era5_dir: Directorio destino donde se escriben los archivos ERA5.
+	"""
 	conaf = load_conaf()
 	conaf = filter_conaf_years(conaf, start_year, end_year)
 	year_months = _needed_year_months(conaf)
@@ -85,7 +95,35 @@ def main(
 	fill_all: bool = typer.Option(False, "--fill-all", help="Con --backfill: re-extrae ERA5 de TODAS las filas con cobertura (tras dedup), no solo las NaN"),
 	dedup: bool = typer.Option(False, "--dedup", help="Deduplica la grilla de longitud de los .nc en era5-dir (columnas fantasma del merge); no enriquece"),
 ):
-	"""Pipeline completo: CONAF → ERA5 → dataset enriquecido."""
+	"""Ejecuta el pipeline CONAF → ERA5 → dataset enriquecido de punta a punta.
+
+	Según los flags, despacha a uno de los modos mutuamente excluyentes: dedup
+	de la grilla de longitud, backfill no destructivo de celdas ERA5 NaN sobre
+	mar, descarga acotada de ERA5, o el pipeline completo con enriquecimiento y
+	escritura del parquet versionado.
+
+	Args:
+		years: Rango de años en formato YYYY-YYYY.
+		skip_download: Asume ERA5 ya descargado y omite la descarga.
+		download_only: Solo descarga ERA5; no enriquece ni escribe parquet.
+		skip_modis: Salta la descarga MODIS y el cálculo de label_l2.
+		refresh_conaf: Re-descarga CONAF aunque exista cache.
+		out: Ruta parquet opcional para el output versionado.
+		era5_dir: Directorio ERA5 (default: data/raw/era5/).
+		backfill: Rellena (no destructivo) celdas ERA5 NaN sobre mar saltando a
+			tierra; preserva label_l2/modis.
+		max_snap_km: Tope del salto a tierra en km.
+		no_download: En backfill, no descarga ERA5 aunque falte algún mes.
+		fill_all: Con backfill, re-extrae ERA5 de TODAS las filas con cobertura
+			(tras dedup), no solo las NaN.
+		dedup: Deduplica la grilla de longitud de los .nc en era5_dir (columnas
+			fantasma del merge); no enriquece.
+
+	Raises:
+		typer.BadParameter: Si el rango de años es inválido, no hay .nc para
+			dedup, o se combinan flags incompatibles.
+		typer.Exit: Con código 1 si el pipeline falla en tiempo de ejecución.
+	"""
 	try:
 		start_year, end_year = parse_year_range(years)
 	except ValueError as e:
