@@ -21,9 +21,10 @@ import xarray as xr
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from src.config import DATA_PROCESSED  # noqa: E402
 from src.era5 import _haversine_km  # noqa: E402
 
-PARQUET = ROOT / "data/processed/conaf_enriched_2012_2018.parquet"
+PARQUET = DATA_PROCESSED / "conaf_enriched_2012_2018.parquet"
 REF_NC = ROOT / "data/raw/era5/era5_land_2012_01.nc"
 OUT = Path(__file__).resolve().parent / "viz_data.json"
 CHILE_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson"
@@ -33,12 +34,29 @@ MEGAFIRE_HA = 1000
 
 
 def f32_b64(arr):
-    """Empaqueta un array como Float32 little-endian en base64 (compacto y rápido de parsear en JS)."""
+    """Empaqueta un array como Float32 little-endian codificado en base64.
+
+    Formato compacto y rápido de parsear en JavaScript.
+
+    Args:
+        arr: Array (o secuencia) de números a serializar.
+
+    Returns:
+        Cadena base64 con los bytes Float32 little-endian del array.
+    """
     return base64.b64encode(np.asarray(arr, dtype="<f4").tobytes()).decode("ascii")
 
 
 def build_land_arrays(ds):
-    """Máscara tierra/mar (bool) + coords de las celdas de tierra desde el NetCDF de referencia."""
+    """Extrae la máscara tierra/mar y las coordenadas de la grilla del NetCDF de referencia.
+
+    Args:
+        ds: Dataset xarray del NetCDF ERA5-Land de referencia.
+
+    Returns:
+        Tupla ``(lats, lons, land2d)``: vectores de latitudes y longitudes y la máscara
+        booleana 2D de celdas de tierra (donde la variable de referencia no es nula).
+    """
     ref = next((v for v in ds.data_vars if v == "t2m"), None) or next(iter(ds.data_vars))
     latn = "latitude" if "latitude" in ds.coords else "lat"
     lonn = "longitude" if "longitude" in ds.coords else "lon"
@@ -51,11 +69,24 @@ def build_land_arrays(ds):
 
 
 def nearest_land_index(land_lat, land_lon, coslat):
-    """KDTree equirectangular sobre las celdas de tierra → query de vecino más cercano (lat,lon,km)."""
+    """Crea una función de consulta del vecino de tierra más cercano vía KDTree.
+
+    Construye un KDTree equirectangular sobre las celdas de tierra (corrigiendo la
+    longitud por el coseno de la latitud media).
+
+    Args:
+        land_lat: Latitudes de las celdas de tierra.
+        land_lon: Longitudes de las celdas de tierra.
+        coslat: Coseno de la latitud media, factor de corrección de la longitud.
+
+    Returns:
+        Función ``q(lat, lon)`` que devuelve ``(lat_tierra, lon_tierra, dist_km)``.
+    """
     from scipy.spatial import cKDTree
     tree = cKDTree(np.column_stack([land_lat, land_lon * coslat]))
 
     def q(lat, lon):
+        """Devuelve la celda de tierra más cercana a (lat, lon) y su distancia en km."""
         _, i = tree.query([lat, lon * coslat])
         llat, llon = float(land_lat[i]), float(land_lon[i])
         return llat, llon, _haversine_km(lat, lon, llat, llon)
@@ -63,7 +94,12 @@ def nearest_land_index(land_lat, land_lon, coslat):
 
 
 def fetch_chile_outline():
-    """Baja el contorno de Chile (Natural Earth), lo simplifica y devuelve anillos [ [ [lon,lat],... ] ]."""
+    """Descarga el contorno de Chile (Natural Earth), lo simplifica y lo devuelve como anillos.
+
+    Returns:
+        Lista de anillos ``[[[lon, lat], ...], ...]`` (polígonos exteriores simplificados),
+        o ``None`` si la descarga falla o no se encuentra Chile en el GeoJSON.
+    """
     try:
         with urllib.request.urlopen(CHILE_URL, timeout=30) as r:
             gj = json.load(r)
@@ -88,6 +124,7 @@ def fetch_chile_outline():
 
 
 def main():
+    """Exporta ``viz_data.json``: incendios, grilla tierra/mar, saltos a tierra y contorno de Chile."""
     print("Cargando parquet...")
     df = pd.read_parquet(PARQUET)
     n = len(df)

@@ -91,8 +91,13 @@ DERIVED_DATASET_NOTICE = {
 def attribution_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
 	"""Ensambla el payload completo de atribución.
 
-	`extra` permite añadir contexto de ejecución (parámetros del run, versión, etc.)
-	bajo la clave "run" del JSON resultante.
+	Args:
+		extra: Contexto de ejecución opcional (parámetros del run, versión, etc.)
+			que se incluye bajo la clave "run" del JSON resultante.
+
+	Returns:
+		Diccionario con las claves "sources" y "derived_dataset", más "run"
+		si se entregó `extra`.
 	"""
 	payload = {
 		"sources": DATA_ATTRIBUTION,
@@ -104,10 +109,17 @@ def attribution_payload(extra: dict[str, Any] | None = None) -> dict[str, Any]:
 
 
 def write_attribution_sidecar(out_path: Path, extra: dict[str, Any] | None = None) -> Path:
-	"""Escribe el sidecar JSON junto al artefacto indicado.
+	"""Escribe el sidecar JSON de attribution junto al artefacto indicado.
 
 	El archivo se nombra igual que el artefacto pero con extensión .attribution.json
 	(e.g. conaf_enriched_2002_2020.parquet → conaf_enriched_2002_2020.attribution.json).
+
+	Args:
+		out_path: Ruta del artefacto para el que se genera el sidecar.
+		extra: Contexto de ejecución opcional que se propaga al payload.
+
+	Returns:
+		Ruta del sidecar escrito.
 	"""
 	sidecar = out_path.with_suffix(".attribution.json")
 	sidecar.write_text(
@@ -123,10 +135,16 @@ def write_attribution_sidecar(out_path: Path, extra: dict[str, Any] | None = Non
 
 
 def _json_safe_default(obj: Any) -> Any:
-	"""Handler para json.dumps(default=...) — cubre tipos no estándar comunes.
+	"""Convierte tipos no estándar para usarse como `default` de json.dumps.
 
 	Convierte: Path → str, numpy scalars → Python nativo, datetime → isoformat,
 	pd.NaN / float NaN / inf → None. Todo lo demás cae a str().
+
+	Args:
+		obj: Valor que json.dumps no pudo serializar de forma nativa.
+
+	Returns:
+		Representación JSON-serializable del valor.
 	"""
 	if isinstance(obj, Path):
 		return str(obj)
@@ -184,6 +202,14 @@ _ROLE_LOOKUP: dict[str, str] = {
 
 
 def _safe_json_dump(payload: dict[str, Any], path: Path) -> None:
+	"""Serializa un payload a JSON creando los directorios padre necesarios.
+
+	Usa `_json_safe_default` como fallback para tipos no serializables.
+
+	Args:
+		payload: Diccionario a volcar como JSON.
+		path: Ruta de destino del archivo.
+	"""
 	path.parent.mkdir(parents=True, exist_ok=True)
 	path.write_text(
 		json.dumps(payload, ensure_ascii=False, indent=2, default=_json_safe_default),
@@ -192,6 +218,16 @@ def _safe_json_dump(payload: dict[str, Any], path: Path) -> None:
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
+	"""Lee un CSV detectando si el separador es "|" o ",".
+
+	Inspecciona la primera línea para elegir el separador antes de parsear.
+
+	Args:
+		path: Ruta del archivo CSV.
+
+	Returns:
+		DataFrame con el contenido del CSV.
+	"""
 	lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
 	sep = "|" if lines and "|" in lines[0] else ","
 	return pd.read_csv(path, sep=sep, low_memory=False)
@@ -202,6 +238,12 @@ def _canonical_name(name: str) -> str:
 
 	Flujo: unicode NFKD → strip acentos → lowercase → reemplaza caracteres
 	no alfanuméricos por _ → strip underscores extremos.
+
+	Args:
+		name: Nombre de columna original.
+
+	Returns:
+		Nombre canónico en snake_case ASCII.
 	"""
 	value = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
 	value = value.lower().strip()
@@ -213,17 +255,24 @@ def _canonical_name(name: str) -> str:
 def _role_for_column(name: str) -> str:
 	"""Clasifica una columna según su rol en el pipeline.
 
-	Roles:
-	  conaf_context    : identificadores del evento (región, temporada, nombre)
-	  time             : columnas de fecha/hora
-	  location         : coordenadas geográficas
-	  candidate_target : variable objetivo del modelo (superficie_quemada_total_ha)
-	  conaf_feature    : otras variables del evento (causa, alerta, duración, vegetación)
-	  era5_raw         : variables meteorológicas crudas de ERA5-Land
-	  era5_invariant   : variables estáticas de ERA5 (tipo suelo, cobertura)
-	  era5_derived     : features calculadas a partir de ERA5 (Celsius, VPD, etc.)
-	  join_quality     : métricas de calidad del nearest-neighbor match
-	  unknown          : no clasificada
+	Resuelve primero por lookup de nombre canónico, luego por prefijo y por
+	pertenencia a los sets de columnas ERA5.
+
+	Args:
+		name: Nombre de columna a clasificar.
+
+	Returns:
+		Etiqueta de rol, una de:
+		  conaf_context    : identificadores del evento (región, temporada, nombre)
+		  time             : columnas de fecha/hora
+		  location         : coordenadas geográficas
+		  candidate_target : variable objetivo del modelo (superficie_quemada_total_ha)
+		  conaf_feature    : otras variables del evento (causa, alerta, duración, vegetación)
+		  era5_raw         : variables meteorológicas crudas de ERA5-Land
+		  era5_invariant   : variables estáticas de ERA5 (tipo suelo, cobertura)
+		  era5_derived     : features calculadas a partir de ERA5 (Celsius, VPD, etc.)
+		  join_quality     : métricas de calidad del nearest-neighbor match
+		  unknown          : no clasificada
 	"""
 	canonical = _canonical_name(name)
 	if canonical in _ROLE_LOOKUP:
@@ -242,6 +291,20 @@ def _role_for_column(name: str) -> str:
 
 
 def _source_for_column(name: str, dataset_kind: str) -> str:
+	"""Determina la fuente de datos de origen de una columna.
+
+	Deriva la fuente a partir del rol de la columna; si el rol no es concluyente,
+	usa `dataset_kind` como fallback.
+
+	Args:
+		name: Nombre de columna.
+		dataset_kind: Tipo de artefacto del que proviene la columna (e.g.
+			"conaf_raw_season", "era5_netcdf").
+
+	Returns:
+		Identificador de fuente: "conaf", "era5_land", "pipeline" o el propio
+		`dataset_kind`.
+	"""
 	role = _role_for_column(name)
 	if role.startswith("conaf") or role in {"time", "candidate_target", "location"}:
 		return "conaf"
@@ -261,6 +324,13 @@ def _clean_value(value: Any) -> Any:
 
 	Más exhaustivo que _json_safe_default: también maneja bytes y float inf.
 	Se usa al construir ejemplos y estadísticas del perfil de columnas.
+
+	Args:
+		value: Valor crudo extraído de una Series de pandas.
+
+	Returns:
+		Valor JSON-serializable; None para nulos, NaN o inf; hex truncado a 64
+		caracteres para bytes.
 	"""
 	if value is None:
 		return None
@@ -282,11 +352,32 @@ def _clean_value(value: Any) -> Any:
 
 
 def _examples(series: pd.Series, limit: int = 3) -> list[Any]:
+	"""Extrae valores de ejemplo distintos y no nulos de una Series.
+
+	Args:
+		series: Series de la que tomar ejemplos.
+		limit: Cantidad máxima de ejemplos a devolver.
+
+	Returns:
+		Lista de hasta `limit` valores únicos ya saneados con `_clean_value`.
+	"""
 	values = series.dropna().unique()[:limit]
 	return [_clean_value(value) for value in values]
 
 
 def _series_profile(series: pd.Series, dataset_kind: str) -> dict[str, Any]:
+	"""Construye el perfil de una columna individual.
+
+	Incluye dtype, conteo y porcentaje de nulos, ejemplos, fuente y rol. Para
+	columnas numéricas o de fecha agrega también min y max.
+
+	Args:
+		series: Columna a perfilar.
+		dataset_kind: Tipo de artefacto de origen, usado para resolver la fuente.
+
+	Returns:
+		Diccionario con el perfil de la columna.
+	"""
 	null_count = int(series.isna().sum())
 	profile: dict[str, Any] = {
 		"name": str(series.name),
@@ -309,6 +400,17 @@ def _series_profile(series: pd.Series, dataset_kind: str) -> dict[str, Any]:
 
 
 def _dataframe_profile(name: str, path: Path, df: pd.DataFrame, dataset_kind: str) -> dict[str, Any]:
+	"""Construye el perfil completo de un DataFrame.
+
+	Args:
+		name: Nombre legible del artefacto.
+		path: Ruta del archivo de origen.
+		df: DataFrame a perfilar.
+		dataset_kind: Tipo de artefacto.
+
+	Returns:
+		Diccionario con metadata del artefacto y el perfil de cada columna.
+	"""
 	return {
 		"name": name,
 		"path": str(path),
@@ -320,16 +422,44 @@ def _dataframe_profile(name: str, path: Path, df: pd.DataFrame, dataset_kind: st
 
 
 def _profile_csv(path: Path, dataset_kind: str) -> dict[str, Any]:
+	"""Lee y perfila un artefacto CSV.
+
+	Args:
+		path: Ruta del archivo CSV.
+		dataset_kind: Tipo de artefacto.
+
+	Returns:
+		Perfil del DataFrame leído.
+	"""
 	df = _read_csv(path)
 	return _dataframe_profile(path.name, path, df, dataset_kind)
 
 
 def _profile_parquet(path: Path, dataset_kind: str) -> dict[str, Any]:
+	"""Lee y perfila un artefacto Parquet.
+
+	Args:
+		path: Ruta del archivo Parquet.
+		dataset_kind: Tipo de artefacto.
+
+	Returns:
+		Perfil del DataFrame leído.
+	"""
 	df = pd.read_parquet(path)
 	return _dataframe_profile(path.name, path, df, dataset_kind)
 
 
 def _profile_era5_files() -> dict[str, Any]:
+	"""Genera el inventario de los NetCDF ERA5 locales.
+
+	Si no hay archivos, devuelve una nota. Si xarray no está disponible, lista
+	solo rutas y tamaños. En caso contrario inspecciona dimensiones y variables
+	de cada NetCDF; los errores de lectura por archivo se registran y se anexan
+	como entrada con clave "error".
+
+	Returns:
+		Diccionario con metadata del directorio ERA5 y la lista de archivos.
+	"""
 	files = sorted(ERA5_RAW_DIR.glob("*.nc"))
 	base = {
 		"name": "ERA5 NetCDF",
@@ -380,6 +510,14 @@ def _profile_era5_files() -> dict[str, Any]:
 
 
 def _artifact_row(artifact: dict[str, Any]) -> str:
+	"""Formatea un artefacto como fila de la tabla Markdown de artefactos.
+
+	Args:
+		artifact: Diccionario con las claves name, kind, rows, columns y path.
+
+	Returns:
+		Fila Markdown con las celdas del artefacto.
+	"""
 	return (
 		f"| `{artifact.get('name')}` | `{artifact.get('kind')}` | "
 		f"{artifact.get('rows', '-')} | {artifact.get('columns', '-')} | `{artifact.get('path')}` |"
@@ -387,6 +525,14 @@ def _artifact_row(artifact: dict[str, Any]) -> str:
 
 
 def _features_table(features: list[dict[str, Any]]) -> list[str]:
+	"""Construye la tabla Markdown con el perfil de un conjunto de features.
+
+	Args:
+		features: Lista de perfiles de columna (salida de `_series_profile`).
+
+	Returns:
+		Lista de líneas Markdown (encabezado, separador y una fila por feature).
+	"""
 	lines = [
 		"| Feature | dtype | nulls | null % | source | role | examples | min | max |",
 		"|---|---:|---:|---:|---|---|---|---:|---:|",
@@ -402,6 +548,15 @@ def _features_table(features: list[dict[str, Any]]) -> list[str]:
 
 
 def _write_markdown(report: dict[str, Any], path: Path) -> None:
+	"""Renderiza el feature report como Markdown y lo escribe en disco.
+
+	Genera secciones para artefactos, inventario ERA5 local, CONAF limpio,
+	dataset enriquecido, índice CONAF y CSV CONAF por temporada.
+
+	Args:
+		report: Diccionario del feature report (salida de `generate_feature_report`).
+		path: Ruta de destino del archivo Markdown.
+	"""
 	lines = [
 		"# Informe de features",
 		"",
@@ -442,12 +597,25 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
 
 
 def generate_feature_report(enriched_path: Path, out_dir: Path = DATA_PROCESSED) -> dict[str, Any]:
-	"""Genera reporte JSON + Markdown con el perfil de features de todos los artefactos.
+	"""Genera el feature report JSON + Markdown con el perfil de todos los artefactos.
+
+	Perfila los CSV de temporada e índice de CONAF, el CONAF limpio, el dataset
+	enriquecido y el inventario ERA5 local. Escribe `features_report.json`,
+	`features_report.md` y un sidecar `.features.json` junto al artefacto
+	enriquecido.
 
 	Convención de nombres de archivo en CONAF_RAW_DIR:
 	  - stems de 8 dígitos (e.g. "00234567"): archivos de temporada (un CSV por temporada).
 	  - otros stems: índice o metadata del dataset.
 	Esta convención viene del formato de Dataverse / itrend.
+
+	Args:
+		enriched_path: Ruta del dataset enriquecido a perfilar y junto al cual
+			se escribe el sidecar.
+		out_dir: Directorio de salida para los reportes JSON y Markdown.
+
+	Returns:
+		Diccionario del report, incluyendo las rutas escritas bajo la clave "paths".
 	"""
 	from datetime import datetime, timezone
 

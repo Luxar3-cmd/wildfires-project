@@ -24,6 +24,15 @@ REACT_UMD = {
 
 
 def vendor(name, url):
+    """Devuelve el contenido de un bundle vendorizado, descargándolo si falta.
+
+    Args:
+        name: Nombre del archivo bajo el directorio _vendor.
+        url: URL desde la que descargar el bundle si no está cacheado.
+
+    Returns:
+        El contenido del archivo como texto UTF-8.
+    """
     p = VENDOR / name
     if not p.exists():
         print(f"  bajando {name}...")
@@ -34,6 +43,16 @@ def vendor(name, url):
 
 
 def main():
+    """Ensambla el HTML autocontenido del visualizador.
+
+    Inyecta los bundles React UMD (vendorizados) y el contenido de
+    viz_data.json en app.template.html, y escribe el resultado en
+    pipeline_viz.html.
+
+    Raises:
+        SystemExit: Si falta viz_data.json (hay que generarlo antes con
+            export_viz_data.py).
+    """
     if not DATA.exists():
         raise SystemExit("Falta viz_data.json — corre primero: python viz/export_viz_data.py")
 

@@ -39,10 +39,30 @@ LATEST_PARQUET = DATA_PROCESSED / "conaf_enriched_latest.parquet"
 
 
 def versioned_output_path(start_year: int, end_year: int) -> Path:
+	"""Construye la ruta del parquet versionado para un rango de años.
+
+	Args:
+		start_year: Año inicial del rango.
+		end_year: Año final del rango.
+
+	Returns:
+		Ruta al parquet enriquecido versionado por el rango de años.
+	"""
 	return DATA_PROCESSED / f"conaf_enriched_{start_year}_{end_year}.parquet"
 
 
 def parse_year_range(spec: str) -> tuple[int, int]:
+	"""Parsea una especificación de rango de años en formato YYYY-YYYY.
+
+	Args:
+		spec: Cadena con el rango de años (por ejemplo, "2002-2020").
+
+	Returns:
+		Tupla (start_year, end_year) con los años parseados.
+
+	Raises:
+		ValueError: Si el formato no es YYYY-YYYY o si el primer año es mayor que el segundo.
+	"""
 	m = re.fullmatch(r"\s*(\d{4})\s*-\s*(\d{4})\s*", spec)
 	if not m:
 		raise ValueError("Formato esperado: YYYY-YYYY (ej: 2002-2020)")
@@ -53,6 +73,23 @@ def parse_year_range(spec: str) -> tuple[int, int]:
 
 
 def filter_conaf_years(conaf: pd.DataFrame, start_year: int, end_year: int) -> pd.DataFrame:
+	"""Filtra los registros CONAF al rango de años indicado.
+
+	Detecta automáticamente la columna de timestamp disponible y conserva las filas
+	cuyo año de inicio cae dentro del rango. Si no hay coincidencias, registra una
+	advertencia y retorna un DataFrame vacío.
+
+	Args:
+		conaf: DataFrame con los registros CONAF.
+		start_year: Año inicial del rango (inclusive).
+		end_year: Año final del rango (inclusive).
+
+	Returns:
+		Copia del DataFrame con solo las filas dentro del rango de años.
+
+	Raises:
+		KeyError: Si no se encuentra ninguna columna de timestamp reconocible.
+	"""
 	ts_col = next((c for c in ("fecha_hora_inicio", "fecha_inicio", "inicio", "fecha") if c in conaf.columns), None)
 	if ts_col is None:
 		raise KeyError("No se encontró columna de timestamp (fecha_hora_inicio / fecha_inicio).")
@@ -71,6 +108,15 @@ def filter_conaf_years(conaf: pd.DataFrame, start_year: int, end_year: int) -> p
 
 
 def _year_counts(df: pd.DataFrame) -> dict[str, int]:
+	"""Cuenta cuántos registros hay por año según `fecha_hora_inicio`.
+
+	Args:
+		df: DataFrame con los registros CONAF.
+
+	Returns:
+		Diccionario de año (como string) a cantidad de registros, ordenado por año.
+		Vacío si no existe la columna `fecha_hora_inicio`.
+	"""
 	if "fecha_hora_inicio" not in df.columns:
 		return {}
 	years = pd.to_datetime(df["fecha_hora_inicio"], errors="coerce").dt.year
@@ -79,10 +125,27 @@ def _year_counts(df: pd.DataFrame) -> dict[str, int]:
 
 
 def _available_conaf_files() -> list[str]:
+	"""Lista los nombres de los CSV de CONAF disponibles en disco.
+
+	Returns:
+		Lista ordenada de nombres de archivo CSV presentes en `CONAF_RAW_DIR`.
+	"""
 	return sorted(path.name for path in CONAF_RAW_DIR.glob("*.csv"))
 
 
 def _era5_timestamp_col(df: pd.DataFrame) -> str | None:
+	"""Selecciona la columna de timestamp a usar para agrupar por ERA5.
+
+	Prioriza la columna UTC sobre la local, porque los NetCDF de ERA5 están en UTC
+	y el agrupamiento por (año, mes) debe usar el tiempo correcto para decidir qué
+	archivo abrir.
+
+	Args:
+		df: DataFrame con los registros CONAF.
+
+	Returns:
+		Nombre de la primera columna de timestamp reconocible, o None si no hay ninguna.
+	"""
 	# Busca la columna UTC primero; si no existe, cae a la local.
 	# Esto garantiza que el agrupamiento por (año, mes) use el tiempo correcto
 	# para decidir qué NetCDF de ERA5 abrir (los archivos están en UTC).
@@ -90,10 +153,17 @@ def _era5_timestamp_col(df: pd.DataFrame) -> str | None:
 
 
 def _needed_year_months(df: pd.DataFrame) -> list[tuple[int, int, tuple[int, ...]]]:
-	"""Retorna la lista de (año, mes, días) únicos necesarios para descargar ERA5.
+	"""Calcula los (año, mes, días) únicos necesarios para descargar ERA5.
 
 	Usa la columna UTC para que un incendio a las 23:00 hora local del 31 de diciembre
 	no genere una descarga innecesaria de enero del año siguiente.
+
+	Args:
+		df: DataFrame con los registros CONAF.
+
+	Returns:
+		Lista ordenada de tuplas (año, mes, días), donde días es una tupla ordenada
+		con los días del mes presentes. Vacía si no hay timestamps válidos.
 	"""
 	ts_col = _era5_timestamp_col(df)
 	if ts_col is None:
@@ -109,7 +179,17 @@ def _needed_year_months(df: pd.DataFrame) -> list[tuple[int, int, tuple[int, ...
 
 
 def _era5_inventory(year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR) -> dict[str, bool]:
-	"""Mapea cada (año, mes) a si existe algún NetCDF ERA5 local (mensual o anual)."""
+	"""Mapea cada (año, mes) a si existe algún NetCDF ERA5 local.
+
+	Considera presente el mes si existe el archivo mensual o el anual correspondiente.
+
+	Args:
+		year_months: Lista de tuplas (año, mes, días) a inspeccionar.
+		era5_dir: Directorio donde buscar los NetCDF de ERA5.
+
+	Returns:
+		Diccionario de clave "YYYY-MM" a booleano que indica si hay NetCDF local.
+	"""
 	inventory = {}
 	for year, month, _days in year_months:
 		month_path = era5_month_path(year, month, era5_dir)
@@ -119,7 +199,17 @@ def _era5_inventory(year_months: list[tuple[int, int, tuple[int, ...]]], era5_di
 
 
 def _era5_sizes(year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR) -> dict[str, int | None]:
-	"""Mapea cada (año, mes) al tamaño en bytes del NetCDF local correspondiente."""
+	"""Mapea cada (año, mes) al tamaño en bytes del NetCDF local.
+
+	Prefiere el archivo mensual; si no existe, recurre al anual.
+
+	Args:
+		year_months: Lista de tuplas (año, mes, días) a inspeccionar.
+		era5_dir: Directorio donde buscar los NetCDF de ERA5.
+
+	Returns:
+		Diccionario de clave "YYYY-MM" al tamaño en bytes del NetCDF, o None si no existe.
+	"""
 	sizes = {}
 	for year, month, _days in year_months:
 		month_path = era5_month_path(year, month, era5_dir)
@@ -134,8 +224,16 @@ def _download_bbox(df: pd.DataFrame, margin: float = 0.5) -> dict[str, float]:
 
 	Se usa el bbox dinámico (en vez del CHILE_BBOX fijo) para minimizar el tamaño
 	de los archivos ERA5 descargados. Si el dataset está filtrado a 4 regiones,
-	el bbox resultante es mucho más pequeño que Chile completo.
-	CHILE_BBOX actúa como límite máximo: el resultado nunca lo excede.
+	el bbox resultante es mucho más pequeño que Chile completo. CHILE_BBOX actúa
+	como límite máximo: el resultado nunca lo excede.
+
+	Args:
+		df: DataFrame con columnas `latitud` y `longitud`.
+		margin: Margen en grados que se añade a cada borde del bbox.
+
+	Returns:
+		Diccionario con las claves "north", "south", "west" y "east". Si no hay
+		puntos válidos, retorna CHILE_BBOX.
 	"""
 	mask = (
 		df["latitud"].between(CHILE_BBOX["south"], CHILE_BBOX["north"])
@@ -154,7 +252,18 @@ def _download_bbox(df: pd.DataFrame, margin: float = 0.5) -> dict[str, float]:
 
 
 def _prepare_conaf(start_year: int, end_year: int, refresh_conaf: bool) -> tuple[pd.DataFrame, dict[str, Any]]:
-	"""Carga CONAF, filtra por rango de años y retorna (df, resumen)."""
+	"""Carga CONAF, filtra por rango de años y arma su resumen.
+
+	Args:
+		start_year: Año inicial del rango (inclusive).
+		end_year: Año final del rango (inclusive).
+		refresh_conaf: Si es True, fuerza la recarga de los datos CONAF.
+
+	Returns:
+		Tupla (df, conaf_summary): el DataFrame filtrado y un diccionario con
+		métricas (filas totales, columnas, conteos por año, años faltantes y
+		filas tras el filtro).
+	"""
 	logger.info("Cargando CONAF (refresh=%s); archivos disponibles: %s", refresh_conaf, _available_conaf_files())
 	conaf = load_conaf(refresh=refresh_conaf)
 	conaf_year_counts = _year_counts(conaf)
@@ -178,7 +287,18 @@ def _prepare_conaf(start_year: int, end_year: int, refresh_conaf: bool) -> tuple
 
 
 def _write_outputs(enriched: pd.DataFrame, versioned_path: Path, params: dict[str, Any]) -> dict[str, Any]:
-	"""Copia al latest, escribe sidecars de atribución y genera feature report."""
+	"""Copia al latest, escribe sidecars de atribución y genera el feature report.
+
+	Args:
+		enriched: DataFrame enriquecido ya escrito en `versioned_path`.
+		versioned_path: Ruta del parquet versionado.
+		params: Parámetros del pipeline, incluidos en los sidecars de atribución.
+
+	Returns:
+		Diccionario con las rutas generadas (versionado, latest, atribución,
+		feature report) y métricas básicas (filas, columnas y conteos de
+		era5_match_quality).
+	"""
 	LATEST_PARQUET.parent.mkdir(parents=True, exist_ok=True)
 	if versioned_path.resolve() != LATEST_PARQUET.resolve():
 		shutil.copy2(versioned_path, LATEST_PARQUET)
@@ -220,7 +340,25 @@ def run_pipeline(
 	out_path: Path | None = None,
 	era5_dir: Path | None = None,
 ) -> dict[str, Any]:
-	"""Ejecuta el pipeline completo y retorna un resumen serializable."""
+	"""Ejecuta el pipeline completo de extremo a extremo.
+
+	Carga y filtra CONAF, calcula el bbox y los meses necesarios, descarga ERA5,
+	enriquece los eventos, opcionalmente etiqueta L2 vía MODIS y escribe los
+	parquets versionado y latest junto con sus sidecars.
+
+	Args:
+		start_year: Año inicial del rango (inclusive).
+		end_year: Año final del rango (inclusive).
+		skip_download: Si es True, omite la descarga de ERA5 y usa lo que haya en disco.
+		refresh_conaf: Si es True, fuerza la recarga de los datos CONAF.
+		skip_modis: Si es True, omite el etiquetado L2 vía MODIS.
+		out_path: Ruta de salida del parquet versionado; si es None, se deriva del rango.
+		era5_dir: Directorio de los NetCDF de ERA5; si es None, usa `ERA5_RAW_DIR`.
+
+	Returns:
+		Diccionario serializable con el resumen del pipeline (params, conaf, era5,
+		modis, output y attribution).
+	"""
 	_era5_dir = era5_dir or ERA5_RAW_DIR
 	versioned_path = out_path or versioned_output_path(start_year, end_year)
 	params = {
@@ -311,16 +449,33 @@ def backfill_era5_water_cells(
 	allow_download: bool = True,
 	fill_all: bool = False,
 ) -> dict[str, Any]:
-	"""Rellena, in-place y de forma no destructiva, las filas cuyo ERA5 quedó NaN por
-	caer en celda de mar, saltando a la celda de tierra más cercana (≤ max_land_snap_km).
+	"""Rellena in-place y de forma no destructiva las filas con ERA5 ausente.
 
-	Idempotente: solo procesa filas con ERA5 ausente y dentro de cobertura; las que ya
-	tienen datos o están `out_of_coverage` se saltan (no se rehace trabajo hecho). Preserva
-	todas las demás filas y columnas (label_l2, modis_*, superficie_*, etc.) — no recomputa
-	MODIS. Reusa los NetCDF en disco; descarga un mes solo si falta y `allow_download`.
+	Procesa las filas cuyo ERA5 quedó NaN por caer en celda de mar, saltando a la
+	celda de tierra más cercana (≤ max_land_snap_km). Es idempotente: solo toca filas
+	con ERA5 ausente y dentro de cobertura; las que ya tienen datos o están
+	`out_of_coverage` se saltan (no se rehace trabajo hecho). Preserva todas las demás
+	filas y columnas (label_l2, modis_*, superficie_*, etc.) y no recomputa MODIS.
+	Reusa los NetCDF en disco y descarga un mes solo si falta y `allow_download`.
 
-	Con `fill_all=True` re-extrae ERA5 de TODAS las filas con cobertura (no solo las NaN):
-	se usa tras deduplicar la grilla para recomputar flags y valores desde celdas reales.
+	Con `fill_all=True` re-extrae ERA5 de TODAS las filas con cobertura (no solo las
+	NaN): se usa tras deduplicar la grilla para recomputar flags y valores desde
+	celdas reales.
+
+	Args:
+		parquet_path: Ruta del parquet a rellenar in-place.
+		era5_dir: Directorio de los NetCDF de ERA5.
+		max_land_snap_km: Distancia máxima en km para saltar a la celda de tierra más cercana.
+		allow_download: Si es True, descarga el mes faltante cuando no hay NetCDF local.
+		fill_all: Si es True, re-extrae ERA5 de todas las filas con cobertura, no solo las NaN.
+
+	Returns:
+		Diccionario con el resumen (rutas del parquet y backup, filas, candidatas,
+		recuperadas, land_snapped y conteos de era5_match_quality).
+
+	Raises:
+		FileNotFoundError: Si el parquet a rellenar no existe.
+		KeyError: Si el parquet no tiene columnas de timestamp/lat/lon reconocibles.
 	"""
 	if not parquet_path.exists():
 		raise FileNotFoundError(f"No existe el parquet a rellenar: {parquet_path}")

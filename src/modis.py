@@ -68,13 +68,37 @@ REQUEST_TIMEOUT_S = 90
 
 
 def firms_csv_path(start_date: date, day_range: int, out_dir: Path = FIRMS_RAW_DIR) -> Path:
-	"""Path local del CSV cacheado para el bloque (start_date, day_range)."""
+	"""Construye el path local del CSV cacheado para un bloque de descarga.
+
+	Args:
+		start_date: Fecha inicial del bloque.
+		day_range: Cantidad de días que cubre el bloque.
+		out_dir: Directorio donde se cachean los CSVs FIRMS.
+
+	Returns:
+		Path del CSV correspondiente al bloque (start_date, day_range).
+	"""
 	end_date = start_date + timedelta(days=day_range - 1)
 	return out_dir / f"modis_sp_{start_date:%Y%m%d}_{end_date:%Y%m%d}.csv"
 
 
 def _firms_url(bbox: dict, start_date: date, day_range: int, source: str = FIRMS_SOURCE) -> str:
-	"""URL del endpoint Area. AREA_COORDINATES = west,south,east,north."""
+	"""Arma la URL del endpoint Area de FIRMS para un bloque de descarga.
+
+	Compone AREA_COORDINATES en el orden west,south,east,north exigido por la API.
+
+	Args:
+		bbox: Bounding box con claves ``west``, ``south``, ``east``, ``north``.
+		start_date: Fecha inicial del bloque.
+		day_range: Cantidad de días que cubre el bloque.
+		source: Fuente FIRMS (por defecto MODIS_SP, Standard Processing).
+
+	Returns:
+		URL completa del endpoint Area, con MAP_KEY incluida.
+
+	Raises:
+		RuntimeError: Si FIRMS_MAP_KEY no está configurada en el entorno.
+	"""
 	if not FIRMS_MAP_KEY:
 		raise RuntimeError(
 			"Falta FIRMS_MAP_KEY en .env. Obtén tu MAP_KEY en\n"
@@ -92,7 +116,26 @@ def download_firms_block(
 	out_dir: Path = FIRMS_RAW_DIR,
 	overwrite: bool = False,
 ) -> Path:
-	"""Descarga un bloque histórico MODIS_SP (≤5 días) para el bbox dado."""
+	"""Descarga un bloque histórico MODIS_SP (≤5 días) para el bbox dado.
+
+	Usa el CSV cacheado si ya existe, salvo que ``overwrite`` sea True. FIRMS
+	responde 200 con cuerpo de texto plano ante errores (MAP_KEY inválida, etc.),
+	por lo que se valida la cabecera del cuerpo antes de persistir.
+
+	Args:
+		start_date: Fecha inicial del bloque.
+		day_range: Cantidad de días del bloque; debe estar en [1, DAY_RANGE_MAX].
+		bbox: Bounding box a consultar; por defecto CHILE_BBOX.
+		out_dir: Directorio donde se cachean los CSVs FIRMS.
+		overwrite: Si es True, re-descarga aunque el CSV ya exista.
+
+	Returns:
+		Path del CSV descargado o cacheado.
+
+	Raises:
+		ValueError: Si ``day_range`` está fuera de [1, DAY_RANGE_MAX].
+		RuntimeError: Si la respuesta de FIRMS no tiene el formato esperado.
+	"""
 	bbox = bbox or CHILE_BBOX
 	if not 1 <= day_range <= DAY_RANGE_MAX:
 		raise ValueError(f"day_range debe estar en [1, {DAY_RANGE_MAX}]; recibido {day_range}")
@@ -118,10 +161,19 @@ def download_firms_block(
 
 
 def _event_days_padded(conaf: pd.DataFrame) -> list[date]:
-	"""Días únicos con evento CONAF, expandidos ±1 día.
+	"""Obtiene los días únicos con evento CONAF, expandidos ±1 día.
 
 	El padding ±1d garantiza que el matching temporal (±24h) tenga FRP disponible
 	aunque la detección MODIS caiga en el día anterior o siguiente al inicio del fuego.
+
+	Args:
+		conaf: Eventos CONAF; debe tener ``fecha_hora_inicio_utc`` o ``fecha_hora_inicio``.
+
+	Returns:
+		Lista ordenada de fechas únicas con padding ±1 día.
+
+	Raises:
+		KeyError: Si CONAF no tiene una columna de timestamp reconocida.
 	"""
 	ts_col = next((c for c in ("fecha_hora_inicio_utc", "fecha_hora_inicio") if c in conaf.columns), None)
 	if ts_col is None:
@@ -136,7 +188,11 @@ def _event_days_padded(conaf: pd.DataFrame) -> list[date]:
 def _group_into_blocks(days: list[date]) -> list[tuple[date, int]]:
 	"""Agrupa días ordenados en bloques contiguos de hasta DAY_RANGE_MAX días.
 
-	Retorna [(start_date, day_range), ...]. Un día aislado produce (día, 1).
+	Args:
+		days: Días ordenados de forma ascendente.
+
+	Returns:
+		Lista de tuplas ``(start_date, day_range)``. Un día aislado produce ``(día, 1)``.
 	"""
 	if not days:
 		return []
@@ -159,7 +215,19 @@ def download_firms_for_conaf(
 	bbox: dict | None = None,
 	out_dir: Path = FIRMS_RAW_DIR,
 ) -> list[Path]:
-	"""Descarga los CSVs FIRMS que cubren los días con eventos CONAF (±1d)."""
+	"""Descarga los CSVs FIRMS que cubren los días con eventos CONAF (±1d).
+
+	Expande los días de evento con padding ±1d, los agrupa en bloques de hasta
+	DAY_RANGE_MAX días y descarga cada bloque.
+
+	Args:
+		conaf: Eventos CONAF con columna de timestamp.
+		bbox: Bounding box a consultar; por defecto CHILE_BBOX.
+		out_dir: Directorio donde se cachean los CSVs FIRMS.
+
+	Returns:
+		Lista de paths de los CSVs descargados; vacía si no hay días válidos.
+	"""
 	bbox = bbox or CHILE_BBOX
 	days = _event_days_padded(conaf)
 	if not days:
@@ -173,7 +241,16 @@ def download_firms_for_conaf(
 def load_firms_csvs(paths: list[Path]) -> pd.DataFrame:
 	"""Carga y concatena CSVs FIRMS; normaliza acq_datetime_utc (naive UTC).
 
-	acq_time llega como entero HHMM (e.g. 1335 = 13:35). Se combina con acq_date.
+	``acq_time`` llega como entero HHMM (p. ej. 1335 = 13:35) y se combina con
+	``acq_date`` para construir ``acq_datetime_utc``. Los CSVs vacíos o ausentes
+	se omiten, y se deduplican las filas.
+
+	Args:
+		paths: Paths de los CSVs FIRMS a cargar.
+
+	Returns:
+		DataFrame concatenado con ``acq_datetime_utc`` (naive UTC); vacío si no hay
+		datos cargables.
 	"""
 	if not paths:
 		return pd.DataFrame()
@@ -206,7 +283,19 @@ def load_firms_csvs(paths: list[Path]) -> pd.DataFrame:
 
 
 def _haversine_km(lat1: float, lon1: float, lat2, lon2):
-	"""Distancia haversine (km). Vectorizada sobre lat2/lon2 (arrays numpy)."""
+	"""Calcula la distancia haversine en km entre un punto y arrays de puntos.
+
+	Vectorizada sobre ``lat2``/``lon2`` (arrays numpy).
+
+	Args:
+		lat1: Latitud del punto de referencia, en grados.
+		lon1: Longitud del punto de referencia, en grados.
+		lat2: Latitud(es) destino, en grados (escalar o array).
+		lon2: Longitud(es) destino, en grados (escalar o array).
+
+	Returns:
+		Distancia(s) haversine en km, con la forma de ``lat2``/``lon2``.
+	"""
 	r = 6371.0
 	phi1, phi2 = np.radians(lat1), np.radians(lat2)
 	dphi = np.radians(lat2 - lat1)
@@ -221,12 +310,22 @@ def match_modis_to_conaf(
 	radius_km: float = MATCH_RADIUS_KM,
 	time_window_h: float = MATCH_TIME_HOURS,
 ) -> pd.DataFrame:
-	"""Para cada evento CONAF, agrega las detecciones MODIS dentro de (radius_km, ±time_window_h).
+	"""Agrega, por evento CONAF, las detecciones MODIS dentro de (radius_km, ±time_window_h).
 
-	Retorna DataFrame alineado al index de `conaf` con columnas:
-	  modis_n_matches   — # detecciones MODIS dentro de la ventana
-	  modis_frp_max_mw  — max FRP [MW] de los matches (NaN si ninguno)
-	  modis_frp_sum_mw  — sum FRP [MW] de los matches (NaN si ninguno)
+	Para cada evento aplica primero un filtro temporal vectorizado y luego un filtro
+	espacial haversine sobre los candidatos, agregando el FRP de los matches.
+
+	Args:
+		conaf: Eventos CONAF con columnas de timestamp, latitud y longitud.
+		modis: Detecciones MODIS con ``latitude``, ``longitude``, ``acq_datetime_utc`` y ``frp``.
+		radius_km: Radio máximo de matching espacial, en km.
+		time_window_h: Semiventana temporal de matching, en horas.
+
+	Returns:
+		DataFrame alineado al index de ``conaf`` con columnas:
+		  modis_n_matches   — # detecciones MODIS dentro de la ventana
+		  modis_frp_max_mw  — max FRP [MW] de los matches (NaN si ninguno)
+		  modis_frp_sum_mw  — sum FRP [MW] de los matches (NaN si ninguno)
 	"""
 	empty = pd.DataFrame(
 		{
@@ -291,11 +390,12 @@ def frp_to_fli(
 	front_length_m: float,
 	radiant_fraction: float = RADIANT_FRACTION,
 ) -> float:
-	"""FLI [kW/m] desde FRP [MW]; marco Wooster et al. (2003, 2004).
+	"""Convierte FRP [MW] a intensidad de línea de fuego (FLI) [kW/m].
 
-	Wooster deriva fireline intensity radiativa = FRE / longitud del frente; aquí
-	se divide además por la radiant fraction η_r para recuperar la FLI total. El
-	valor de η_r y la longitud nominal de 1 km son supuestos del proyecto.
+	Marco Wooster et al. (2003, 2004): Wooster deriva fireline intensity radiativa =
+	FRE / longitud del frente; aquí se divide además por la radiant fraction η_r para
+	recuperar la FLI total. El valor de η_r y la longitud nominal de 1 km son supuestos
+	del proyecto.
 
 	FLI [kW/m] = (FRP [MW] · 1000 / η_r) / front_length [m]
 
@@ -303,6 +403,14 @@ def frp_to_fli(
 	  P_total [W]  = FRP [MW]·1e6 / η_r
 	  FLI   [W/m]  = P_total / front_length
 	  FLI  [kW/m]  = FLI[W/m] / 1e3  =  (FRP[MW]·1e3 / η_r) / front_length
+
+	Args:
+		frp_mw: Potencia radiativa del fuego (FRP), en megavatios.
+		front_length_m: Longitud del frente de fuego, en metros.
+		radiant_fraction: Fracción radiante η_r (adimensional).
+
+	Returns:
+		FLI estimada en kW/m; NaN si el FRP o la longitud del frente no son positivos.
 	"""
 	if pd.isna(frp_mw) or frp_mw <= 0 or front_length_m <= 0:
 		return np.nan
@@ -316,21 +424,29 @@ def label_l2(
 	fli_threshold: float = FLI_EWE_THRESHOLD_KW_M,
 	min_area_ha: float = MIN_AREA_HA_FOR_L2,
 ) -> pd.DataFrame:
-	"""Añade columnas L2 al DataFrame enriquecido y retorna copia.
+	"""Añade las columnas L2 al DataFrame enriquecido y retorna una copia.
 
 	Interpretación "peak local": la FLI se estima sobre el píxel MODIS más caliente
 	(frp_max) usando su propia longitud (MODIS_PIXEL_LENGTH_M = 1 km). El label marca
 	si alguna parte del frente alcanzó intensidad EWE. Equivale a frp_max ≥ 1700 MW.
 
-	Guardia de coherencia: además exige superficie_quemada_total_ha >= min_area_ha, para
-	descartar falsos positivos donde el radio de matching captó el FRP de un fuego vecino
-	(un EWE no ocupa <50 ha).
+	Guardia de coherencia: además exige ``superficie_quemada_total_ha >= min_area_ha``,
+	para descartar falsos positivos donde el radio de matching captó el FRP de un fuego
+	vecino (un EWE no ocupa <50 ha).
 
-	Columnas nuevas:
-	  modis_n_matches    # detecciones MODIS dentro de la ventana
-	  modis_frp_max_mw   max FRP [MW] (NaN si sin match)
-	  fli_estimado_kw_m  FLI por Wooster sobre el píxel pico (NaN si sin FRP)
-	  label_l2           1 si FLI >= umbral EWE y superficie >= min_area_ha; 0 en otro caso
+	Args:
+		enriched: DataFrame de eventos enriquecido a etiquetar.
+		matches: Salida de :func:`match_modis_to_conaf`, alineada al index de ``enriched``.
+		radiant_fraction: Fracción radiante η_r usada en la conversión FRP→FLI.
+		fli_threshold: Umbral de FLI [kW/m] para categoría EWE (Tedim 2018).
+		min_area_ha: Superficie mínima [ha] exigida por la guardia de coherencia.
+
+	Returns:
+		Copia de ``enriched`` con las columnas nuevas:
+		  modis_n_matches    # detecciones MODIS dentro de la ventana
+		  modis_frp_max_mw   max FRP [MW] (NaN si sin match)
+		  fli_estimado_kw_m  FLI por Wooster sobre el píxel pico (NaN si sin FRP)
+		  label_l2           1 si FLI >= umbral EWE y superficie >= min_area_ha; 0 en otro caso
 	"""
 	out = enriched.copy()
 	out["modis_n_matches"] = matches["modis_n_matches"].to_numpy()
@@ -349,13 +465,23 @@ def label_l2(
 
 
 def l2_summary(enriched: pd.DataFrame) -> dict:
-	"""Resumen de la obtención de FRP y del label L2 (para log + summary del pipeline)."""
+	"""Resume la obtención de FRP y el label L2 (para log + summary del pipeline).
+
+	Args:
+		enriched: DataFrame ya etiquetado, con ``modis_n_matches``, ``modis_frp_max_mw``
+			y ``label_l2``.
+
+	Returns:
+		Diccionario con conteos y porcentajes: eventos totales, con detección MODIS,
+		con FRP válido y con label L2 positivo/negativo.
+	"""
 	n_total = int(len(enriched))
 	n_match = int((enriched["modis_n_matches"] > 0).sum())
 	n_frp_valid = int((pd.to_numeric(enriched["modis_frp_max_mw"], errors="coerce") > 0).sum())
 	n_l2_pos = int((enriched["label_l2"] == 1).sum())
 
 	def pct(n: int) -> float:
+		"""Calcula el porcentaje de ``n`` sobre ``n_total`` (0.0 si no hay eventos)."""
 		return round(100.0 * n / n_total, 2) if n_total else 0.0
 
 	return {
@@ -371,7 +497,11 @@ def l2_summary(enriched: pd.DataFrame) -> dict:
 
 
 def log_l2_summary(summary: dict) -> None:
-	"""Imprime el resumen L2 en el log con formato legible."""
+	"""Imprime el resumen L2 en el log con formato legible.
+
+	Args:
+		summary: Diccionario producido por :func:`l2_summary`.
+	"""
 	logger.info(
 		"L2/MODIS resumen:\n"
 		"  eventos totales:      %8d\n"

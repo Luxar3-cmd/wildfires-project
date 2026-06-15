@@ -41,7 +41,17 @@ ENRICHED_PARQUET = DATA_PROCESSED / "conaf_enriched.parquet"
 
 
 def _resolve_timestamp_col(df: pd.DataFrame) -> str:
-	"""Devuelve el nombre de la primera columna de timestamp presente en el DataFrame."""
+	"""Devuelve el nombre de la primera columna de timestamp presente en el DataFrame.
+
+	Args:
+		df: DataFrame de eventos CONAF donde buscar la columna de fecha/hora.
+
+	Returns:
+		El nombre de la primera columna de timestamp candidata que exista.
+
+	Raises:
+		KeyError: Si ninguna de las columnas candidatas está presente.
+	"""
 	for cand in ("fecha_hora_inicio_utc", "fecha_hora_inicio", "fecha_inicio", "inicio", "fecha"):
 		if cand in df.columns:
 			return cand
@@ -49,7 +59,17 @@ def _resolve_timestamp_col(df: pd.DataFrame) -> str:
 
 
 def _resolve_lat_lon_cols(df: pd.DataFrame) -> tuple[str, str]:
-	"""Devuelve los nombres de las columnas de latitud y longitud presentes en el DataFrame."""
+	"""Devuelve los nombres de las columnas de latitud y longitud presentes en el DataFrame.
+
+	Args:
+		df: DataFrame de eventos CONAF donde buscar las columnas de coordenadas.
+
+	Returns:
+		Tupla `(lat_col, lon_col)` con los nombres de las columnas de latitud y longitud.
+
+	Raises:
+		KeyError: Si no se encuentra alguna de las columnas de latitud o longitud.
+	"""
 	lat = next((c for c in df.columns if c in {"latitud", "latitude", "lat"}), None)
 	lon = next((c for c in df.columns if c in {"longitud", "longitude", "lon", "lng"}), None)
 	if not (lat and lon):
@@ -58,7 +78,17 @@ def _resolve_lat_lon_cols(df: pd.DataFrame) -> tuple[str, str]:
 
 
 def _bbox_mask(df: pd.DataFrame, lat_col: str, lon_col: str, bbox: dict) -> pd.Series:
-	"""Máscara booleana de los eventos que caen dentro del bounding box dado."""
+	"""Máscara booleana de los eventos que caen dentro del bounding box dado.
+
+	Args:
+		df: DataFrame de eventos con columnas de latitud y longitud.
+		lat_col: Nombre de la columna de latitud.
+		lon_col: Nombre de la columna de longitud.
+		bbox: Bounding box con claves `north`, `south`, `west`, `east`.
+
+	Returns:
+		Serie booleana, `True` donde el evento cae dentro del bbox.
+	"""
 	return (
 		df[lat_col].between(bbox["south"], bbox["north"])
 		& df[lon_col].between(bbox["west"], bbox["east"])
@@ -80,6 +110,17 @@ def enrich_conaf_with_era5(
 	   el grid point más cercano en tiempo y espacio para cada incendio.
 	3. Calcula features derivadas (temp Celsius, VPD, velocidad de viento, etc.).
 	4. Si existe el NetCDF de invariantes, añade variables estáticas por coordenada.
+
+	Args:
+		conaf: Eventos CONAF con columnas de timestamp y coordenadas (lat, lon).
+		era5_dir: Directorio que contiene los NetCDF mensuales/anuales de ERA5.
+		out_path: Ruta del Parquet de salida; si es `None`, usa `ENRICHED_PARQUET`.
+		save: Si es `True`, guarda el dataset enriquecido en `out_path`.
+		bbox: Bounding box de cobertura ERA5; si es `None`, usa `CHILE_BBOX`.
+
+	Returns:
+		DataFrame con las columnas originales más las variables ERA5 puntuales,
+		las features derivadas y las invariantes (o `None` donde no haya match).
 	"""
 	out_path = out_path or ENRICHED_PARQUET
 	bbox = bbox or CHILE_BBOX
