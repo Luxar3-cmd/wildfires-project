@@ -15,6 +15,7 @@ make test             # pytest tests/ -v
 make lint             # ruff check src/ --select E,W,F
 make notebook         # jupyter lab eda/
 make readme           # regenera README.html con pandoc (NO editar el .html a mano)
+make report           # regenera docs/reporte_e3.html (reporte de sesión E3) con pandoc
 
 # Un solo test
 .venv/bin/python -m pytest tests/test_era5_extractor.py -v
@@ -32,6 +33,8 @@ python scripts/preprocess.py --years 2012-2018
 # Experimentos de modeling (escriben reportes HTML en eda/)
 python modeling/02_l1_vs_l2_experiment.py    # L1 vs L2 + Quantus faithfulness
 python modeling/03_l2_robust_eval.py         # eval robusta de L2 (clase rara) + proxy L1→L2
+python modeling/04_l2_threshold_sensitivity.py  # robustez de L2 al umbral FLI y a η_r → latex/images/
+python modeling/05_operational_triage.py     # utilidad operacional (recall/lift por presupuesto) → latex/images/
 
 # Visualizador del pipeline (artefacto HTML autocontenido)
 .venv/bin/python viz/export_viz_data.py      # genera viz/viz_data.json (requiere red)
@@ -68,19 +71,20 @@ programático es `from src.pipeline import run_pipeline`.
 
 ## Las dos etiquetas (la pregunta de investigación)
 
-- **L1** — megaincendio por área (`superficie_quemada_total_ha ≥ 1000`). Directo pero grueso. 78 positivos.
+- **L1** — megaincendio por área (`superficie_quemada_total_ha ≥ 1000`). Directo pero grueso. 76 positivos (4 regiones de estudio).
 - **L2** — aproximación física de un Extreme Wildfire Event (EWE): FRP→FLI ≥ 10.000 kW/m, computado en
-  `src/modis.py`. **Clase muy rara: ~11 positivos** en 2012-2018. Limitación: la definición EWE completa
+  `src/modis.py`. **Clase muy rara: 11 positivos** en 2012-2018 (4 regiones). Limitación: la definición EWE completa
   exige *spread rate* y *spot distance* (solo in-situ); aquí solo hay FRP.
-- La pregunta es si L1 (fácil de computar) es proxy válido de L2 (intensidad). `modeling/02`–`03` lo
-  contrastan; hallazgo preliminar: las explicaciones **no siempre son consistentes**. Detalles en
-  `docs/l2_robust_eval_findings.md`.
+- La pregunta es si L1 (fácil de computar) es proxy válido de L2 (intensidad). `modeling/02`–`05` lo
+  contrastan (restringidos a 4 regiones): hallazgo E3 — L1 es **proxy parcial, no sustituto** (L1→L2 AUC≈0,89,
+  overlap 6/11, drivers SHAP divergentes). Detalles en `docs/l2_robust_eval_findings.md` y `docs/reporte_e3.html`.
 
 ## Modeling: fuente única + caveats de datos
 
 - **`src/modeling_features.py`** es la única fuente de verdad para los experimentos: la whitelist de **44
-  features ex-ante** (`FEATURE_COLS`), `XGB_PARAMS`, `MEGAFIRE_HA_THRESHOLD`, semillas y folds. El notebook
-  `modeling/01` y los scripts `02`/`03` importan de aquí — **no redefinir estas constantes localmente**
+  features ex-ante** (`FEATURE_COLS`), `XGB_PARAMS`, `MEGAFIRE_HA_THRESHOLD`, semillas, folds y `STUDY_REGIONS`
+  (las 4 regiones de estudio: Maule, Biobío, Araucanía, O'Higgins). El notebook `modeling/01` y los scripts
+  `02`–`05` importan de aquí y filtran a esas regiones — **no redefinir estas constantes localmente**
   (antes estaban triplicadas y se desincronizaron). No pertenece al pipeline de datos pese a vivir en `src/`.
 - **Las 44 features están pobladas (post-fix 2026-06-14).** Antes, `evavt`
   (`evaporation_from_vegetation_transpiration`) y los 6 invariantes ERA5 (`slt, lsm, cvh, cvl, tvh, tvl`)
@@ -91,7 +95,8 @@ programático es `from src.pipeline import run_pipeline`.
 - Métricas honestas: CV estratificada (repetida 20× en `03`) con intervalos de confianza y LOPO, dado el
   conteo mínimo de positivos. El intervalo ancho de L2 es la firma esperada de 11 positivos, no un error.
 - El dataset canónico de modeling es `data/processed/conaf_enriched_2012_2018.parquet` (gitignored; viene
-  comprimido como `.tar.gz` en la raíz). Los scripts lo hardcodean.
+  comprimido como `.tar.gz` en la raíz). Los scripts lo hardcodean y filtran a `STUDY_REGIONS` → **30.511 filas
+  usables** (L1=76, L2=11), 44 features.
 
 ## Gotchas que cruzan archivos
 
@@ -105,8 +110,8 @@ programático es `from src.pipeline import run_pipeline`.
   grilla común (`_align_to_ref`) para no duplicar, y `era5.deduplicate_lon` (CLI `--dedup`) **combina** las
   gemelas celda a celda (lossless + idempotente, con backup) en vez de descartar una. Antes descartaba la
   gemela que traía `evavt` (llega en un batch aparte con grilla desfasada) y lo dejaba all-NaN — esa era la
-  causa del punto anterior. El baseline honesto actual es **post-fix** (32.162 filas usables). Si ves un
-  `land_snapped` masivo en datos nuevos, sospecha de esto.
+  causa del punto anterior. El baseline honesto es **post-fix**; el modeling lo restringe a `STUDY_REGIONS`
+  → **30.511 filas usables** (44 features; L1=76, L2=11). Si ves un `land_snapped` masivo en datos nuevos, sospecha de esto.
 - **Inmutabilidad.** NUNCA modificar los `.parquet` de `data/processed/` ni `data/raw/` en sitio. Toda
   limpieza/filtrado/transformación va en memoria dentro de los scripts. (`backfill`/`dedup` son la excepción
   pactada: in-place no destructivo con backup.)
