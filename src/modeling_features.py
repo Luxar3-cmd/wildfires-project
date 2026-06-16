@@ -41,6 +41,10 @@ MEGAFIRE_HA_THRESHOLD = 1000
 RANDOM_STATE = 42
 N_SPLITS = 5
 
+# Macrozona centro-sur: las cuatro regiones de estudio (sección "Study Area" del paper).
+# El modeling se restringe a ellas; el resto de eventos dentro del bbox ERA5 se excluye.
+STUDY_REGIONS = ["Maule", "Biobío", "Araucanía", "O'Higgins"]
+
 # Hiperparámetros del clasificador XGBoost compartidos por todos los experimentos.
 # `scale_pos_weight` se calcula por experimento/fold (clase positiva muy rara).
 XGB_PARAMS = dict(
