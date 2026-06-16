@@ -108,11 +108,11 @@ SHAP drivers diverge.
 
 ## Installation & credentials
 
-Python 3.12 recommended (Fedora/RHEL: `dnf install python3.12`; macOS: `brew install python@3.12`).
+Requires [uv](https://docs.astral.sh/uv/) — install with `curl -LsSf https://astral.sh/uv/install.sh | sh`. uv provisions Python 3.12 automatically; no system Python required.
 
 ```bash
 git clone <repo-url> && cd XAI-project
-make setup            # creates .venv, installs requirements.txt, copies .env.example → .env
+make setup            # creates .venv with uv, installs requirements.txt, copies .env.example → .env
 ```
 
 Edit `.env` with your credentials (see `.env.example`):

@@ -231,7 +231,10 @@ def enrich_conaf_with_era5(
 	if save:
 		out_path.parent.mkdir(parents=True, exist_ok=True)
 		enriched.to_parquet(out_path)
-		logger.info("Dataset enriquecido guardado en %s (%d filas, %d cols)", out_path, len(enriched), enriched.shape[1])
+		logger.info(
+			"Dataset enriquecido guardado en %s (%d filas, %d cols)",
+			out_path, len(enriched), enriched.shape[1],
+		)
 
 	return enriched
 

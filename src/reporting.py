@@ -76,7 +76,10 @@ DATA_ATTRIBUTION = {
 
 # Descripción del dataset derivado: qué transformaciones se aplicaron sobre las fuentes.
 DERIVED_DATASET_NOTICE = {
-	"description": "Dataset derivado que cruza eventos CONAF con variables climáticas ERA5-Land por ubicación y timestamp aproximado.",
+	"description": (
+		"Dataset derivado que cruza eventos CONAF con variables climáticas ERA5-Land "
+		"por ubicación y timestamp aproximado."
+	),
 	"changes": [
 		"Limpieza y normalización de columnas CONAF.",
 		"Filtrado por rango temporal solicitado.",
@@ -589,7 +592,12 @@ def _write_markdown(report: dict[str, Any], path: Path) -> None:
 
 	lines.extend(["## CSV CONAF por temporada", ""])
 	for artifact in report.get("conaf_seasons", []):
-		lines.extend([f"### `{artifact['name']}`", "", f"Filas: {artifact['rows']}; columnas: {artifact['columns']}", ""])
+		lines.extend([
+			f"### `{artifact['name']}`",
+			"",
+			f"Filas: {artifact['rows']}; columnas: {artifact['columns']}",
+			"",
+		])
 		lines.extend(_features_table(artifact.get("features", [])))
 		lines.append("")
 

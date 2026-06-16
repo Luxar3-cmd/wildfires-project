@@ -149,7 +149,10 @@ def _era5_timestamp_col(df: pd.DataFrame) -> str | None:
 	# Busca la columna UTC primero; si no existe, cae a la local.
 	# Esto garantiza que el agrupamiento por (año, mes) use el tiempo correcto
 	# para decidir qué NetCDF de ERA5 abrir (los archivos están en UTC).
-	return next((c for c in ("fecha_hora_inicio_utc", "fecha_hora_inicio", "fecha_inicio", "inicio", "fecha") if c in df.columns), None)
+	candidates = (
+		"fecha_hora_inicio_utc", "fecha_hora_inicio", "fecha_inicio", "inicio", "fecha",
+	)
+	return next((c for c in candidates if c in df.columns), None)
 
 
 def _needed_year_months(df: pd.DataFrame) -> list[tuple[int, int, tuple[int, ...]]]:
@@ -178,7 +181,9 @@ def _needed_year_months(df: pd.DataFrame) -> list[tuple[int, int, tuple[int, ...
 	return sorted((year, month, tuple(sorted(days))) for (year, month), days in needed.items())
 
 
-def _era5_inventory(year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR) -> dict[str, bool]:
+def _era5_inventory(
+	year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR
+) -> dict[str, bool]:
 	"""Mapea cada (año, mes) a si existe algún NetCDF ERA5 local.
 
 	Considera presente el mes si existe el archivo mensual o el anual correspondiente.
@@ -198,7 +203,9 @@ def _era5_inventory(year_months: list[tuple[int, int, tuple[int, ...]]], era5_di
 	return inventory
 
 
-def _era5_sizes(year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR) -> dict[str, int | None]:
+def _era5_sizes(
+	year_months: list[tuple[int, int, tuple[int, ...]]], era5_dir: Path = ERA5_RAW_DIR
+) -> dict[str, int | None]:
 	"""Mapea cada (año, mes) al tamaño en bytes del NetCDF local.
 
 	Prefiere el archivo mensual; si no existe, recurre al anual.

@@ -1,6 +1,4 @@
-PYTHON     ?= $(shell command -v python3.12 2>/dev/null || command -v python3)
 VENV       := .venv
-PIP        := $(VENV)/bin/pip
 JUPYTER    := $(VENV)/bin/jupyter
 
 .PHONY: setup notebook test lint readme report clean help
@@ -9,10 +7,10 @@ help: ## Lista los targets disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
-setup: ## Crea .venv, instala dependencias y copia .env.example si no existe .env
-	$(PYTHON) -m venv $(VENV)
-	$(PIP) install --upgrade pip --quiet
-	$(PIP) install -r requirements.txt
+setup: ## Crea .venv con uv, instala dependencias y copia .env.example si no existe .env
+	@command -v uv >/dev/null 2>&1 || { echo "uv no encontrado. Instala: curl -LsSf https://astral.sh/uv/install.sh | sh"; exit 1; }
+	uv venv --python 3.12 $(VENV)
+	uv pip install -r requirements.txt
 	@[ -f .env ] || (cp .env.example .env && echo "AVISO: .env creado — edita tus credenciales antes de correr el pipeline")
 	@echo "Listo. Activa el entorno con: source $(VENV)/bin/activate"
 
@@ -22,8 +20,8 @@ notebook: ## Lanza Jupyter Lab en eda/
 test: ## Ejecuta la suite de tests
 	$(VENV)/bin/python -m pytest tests/ -v
 
-lint: ## Revisa estilo con ruff (si está instalado en el venv)
-	$(VENV)/bin/ruff check src/ --select E,W,F || true
+lint: ## Revisa estilo con ruff (reglas en ruff.toml; si está instalado en el venv)
+	$(VENV)/bin/ruff check src/ || true
 
 readme: ## Genera README.html (estilo propio) desde README.md con pandoc
 	pandoc README.md -s --toc --toc-depth=2 --embed-resources \

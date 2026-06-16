@@ -10,9 +10,9 @@ pipeline) y `scripts/README.md` (CLI); este archivo resume lo que cruza varios m
 ## Comandos
 
 ```bash
-make setup            # crea .venv (Python 3.12), instala requirements.txt, copia .env.example → .env
+make setup            # crea .venv (Python 3.12) con uv, instala requirements.txt, copia .env.example → .env
 make test             # pytest tests/ -v
-make lint             # ruff check src/ --select E,W,F
+make lint             # ruff check src/ (reglas en ruff.toml)
 make notebook         # jupyter lab eda/
 make readme           # regenera README.html con pandoc (NO editar el .html a mano)
 make report           # regenera docs/reporte_e3.html (reporte de sesión E3) con pandoc
@@ -124,6 +124,7 @@ programático es `from src.pipeline import run_pipeline`.
   Respetar el del archivo que tocas.
 - **Docstrings Google** (`Args:`/`Returns:`/`Raises:`) con **prosa en español**; identificadores y términos
   técnicos en inglés. Convención consistente en `src/`, `scripts/`, `modeling/`, `viz/`.
-- CLI con **Typer**; logging estándar (sin dashboards). `ruff` para estilo.
+- CLI con **Typer**; logging estándar (sin dashboards). `ruff` para estilo (config en `ruff.toml`:
+  `line-length=120`, ignora `W191`/`E101` porque `src/`/`scripts/` usan tabs).
 - Los headers de banner (`# ===…` con curso/autores/archivo) van en los módulos de `src/`, `modeling/`,
   `viz/` — mantenerlos al crear archivos nuevos en esas carpetas.

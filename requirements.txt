@@ -38,3 +38,7 @@ uvicorn>=0.30
 # Notebook
 jupyter>=1.0
 ipykernel>=6.29
+
+# Testing y estilo
+pytest>=8.0
+ruff>=0.6
