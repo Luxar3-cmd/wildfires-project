@@ -41,7 +41,17 @@ CONAF_LOCAL_TIMEZONE = "America/Santiago"
 
 
 def _slugify_column(name: str) -> str:
-	"""Normaliza nombres de columna a snake_case ASCII."""
+	"""Normaliza un nombre de columna a snake_case ASCII.
+
+	Aplica slugify: descompone caracteres acentuados, descarta marcas
+	combinantes y reemplaza todo lo no alfanumérico por guiones bajos.
+
+	Args:
+		name: Nombre de columna original, posiblemente con acentos o símbolos.
+
+	Returns:
+		Nombre normalizado en snake_case ASCII; "col" si quedara vacío.
+	"""
 	nfkd = unicodedata.normalize("NFKD", str(name))
 	ascii_only = "".join(c for c in nfkd if not unicodedata.combining(c))
 	cleaned = re.sub(r"[^0-9a-zA-Z]+", "_", ascii_only).strip("_").lower()
@@ -49,7 +59,18 @@ def _slugify_column(name: str) -> str:
 
 
 def _local_to_utc_naive(ts: pd.Series) -> pd.Series:
-	"""Convierte timestamps de hora local de Chile a UTC sin zona (naive)."""
+	"""Convierte timestamps de hora local de Chile a UTC sin zona (naive).
+
+	Si la serie ya tiene timezone, la convierte directamente; si es naive, la
+	localiza primero en la timezone de Chile. Los instantes ambiguos del cambio
+	de hora se marcan como NaT y los inexistentes se desplazan hacia adelante.
+
+	Args:
+		ts: Serie de timestamps en hora local de Chile (con o sin timezone).
+
+	Returns:
+		Serie de timestamps en UTC sin información de timezone (naive).
+	"""
 	values = pd.to_datetime(ts, errors="coerce")
 	if isinstance(values.dtype, pd.DatetimeTZDtype):
 		return values.dt.tz_convert("UTC").dt.tz_localize(None)
@@ -62,7 +83,23 @@ def _local_to_utc_naive(ts: pd.Series) -> pd.Series:
 
 
 def _download_via_dataverse(dest_dir: Path) -> Path:
-	"""Descarga TODOS los archivos del dataset desde Dataverse y retorna el path principal."""
+	"""Descarga todos los archivos del dataset desde Dataverse.
+
+	Consulta la metadata del dataset, descarga cada archivo por separado (más
+	robusto que el ZIP combinado), guarda un manifiesto en META_FILE y omite los
+	archivos que ya existen en disco.
+
+	Args:
+		dest_dir: Directorio destino donde se guardan los archivos descargados.
+
+	Returns:
+		Path al archivo principal del dataset detectado en dest_dir.
+
+	Raises:
+		ImportError: Si pyDataverse 0.3.3 no está instalado.
+		RuntimeError: Si falta la API key o Dataverse responde con error.
+		FileNotFoundError: Si tras descargar no se halla un CSV/GeoJSON/SHP.
+	"""
 	try:
 		from pyDataverse.api import NativeApi, DataAccessApi
 	except ImportError as e:
@@ -128,11 +165,19 @@ def _download_via_dataverse(dest_dir: Path) -> Path:
 
 
 def _find_dataset_files(dest_dir: Path) -> list[Path]:
-	"""Localiza archivos del dataset por prioridad de formato.
+	"""Localiza los archivos del dataset por prioridad de formato.
 
-	Convención del dataset CONAF en Dataverse (itrend): los archivos de temporada
-	tienen stems numéricos de exactamente 8 dígitos (e.g. "00234567.csv"). Cualquier
+	Recorre recursivamente dest_dir probando los formatos en orden (CSV, GeoJSON,
+	SHP) y retorna los del primer formato con coincidencias. Aplica la convención
+	del dataset CONAF en Dataverse (itrend): los archivos de temporada tienen stems
+	numéricos de exactamente 8 dígitos (e.g. "00234567.csv"), mientras que cualquier
 	otro CSV (índice, metadata) tiene stem no numérico o de longitud distinta.
+
+	Args:
+		dest_dir: Directorio donde buscar los archivos del dataset.
+
+	Returns:
+		Lista ordenada de paths del primer formato encontrado; vacía si no hay.
 	"""
 	for ext in ("*.csv", "*.geojson", "*.shp"):
 		candidates = sorted(
@@ -145,14 +190,34 @@ def _find_dataset_files(dest_dir: Path) -> list[Path]:
 
 
 def _find_primary_file(dest_dir: Path) -> Optional[Path]:
+	"""Retorna el primer archivo del dataset en dest_dir, o None si no hay.
+
+	Args:
+		dest_dir: Directorio donde buscar los archivos del dataset.
+
+	Returns:
+		Path al primer archivo encontrado, o None si no existe ninguno.
+	"""
 	files = _find_dataset_files(dest_dir)
 	return files[0] if files else None
 
 
 def _read_dataset(path: Path) -> gpd.GeoDataFrame:
-	"""Lee CSV/GeoJSON/SHP y retorna siempre un GeoDataFrame.
+	"""Lee un archivo CSV/GeoJSON/SHP y retorna siempre un GeoDataFrame.
 
-	Para CSV usa autodetección de separador (sep=None, engine='python').
+	Para CSV usa autodetección de separador (sep=None, engine='python'), salvo
+	cuando la primera línea contiene "|", en cuyo caso usa esa barra como
+	separador. Si encuentra columnas de latitud y longitud, construye la
+	geometría de puntos en EPSG:4326.
+
+	Args:
+		path: Path al archivo a leer (extensión .csv, .geojson o .shp).
+
+	Returns:
+		GeoDataFrame con los datos leídos en CRS EPSG:4326.
+
+	Raises:
+		ValueError: Si la extensión del archivo no está soportada.
 	"""
 	suffix = path.suffix.lower()
 	if suffix in {".shp", ".geojson"}:
@@ -175,6 +240,20 @@ def _read_dataset(path: Path) -> gpd.GeoDataFrame:
 
 
 def _read_datasets(paths: list[Path]) -> gpd.GeoDataFrame:
+	"""Lee y concatena varios archivos del dataset en un solo GeoDataFrame.
+
+	Lee cada path con _read_dataset y, si hay más de uno, los concatena
+	preservando la geometría y el CRS del primer frame.
+
+	Args:
+		paths: Lista de paths a los archivos del dataset.
+
+	Returns:
+		GeoDataFrame con todos los archivos combinados.
+
+	Raises:
+		FileNotFoundError: Si la lista de paths está vacía.
+	"""
 	if not paths:
 		raise FileNotFoundError(f"No encontré CSV/GeoJSON/SHP en {CONAF_RAW_DIR}")
 
@@ -192,7 +271,19 @@ def _read_datasets(paths: list[Path]) -> gpd.GeoDataFrame:
 
 
 def _clean(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-	"""Limpieza estándar del GeoDataFrame de CONAF."""
+	"""Aplica la limpieza estándar al GeoDataFrame de CONAF.
+
+	Normaliza nombres de columna con slugify, parsea las columnas de fecha,
+	construye fecha_hora_inicio concatenando fecha + hora y su versión UTC,
+	elimina duplicados, convierte latitud/longitud a numérico y las deriva desde
+	la geometría cuando falten.
+
+	Args:
+		gdf: GeoDataFrame crudo leído desde los archivos del dataset.
+
+	Returns:
+		GeoDataFrame limpio con columnas normalizadas y timestamps derivados.
+	"""
 	gdf = gdf.rename(columns={c: _slugify_column(c) for c in gdf.columns})
 
 	date_cols = [c for c in gdf.columns if "fecha" in c]
@@ -237,10 +328,17 @@ def _looks_like_lost_time_component(gdf: pd.DataFrame) -> bool:
 	"""Detecta si el cache tiene timestamps truncados a medianoche.
 
 	Versiones antiguas del dataset CONAF tenían la hora_inicio en una columna
-	separada que se perdía durante la exportación a Parquet. El síntoma es que
+	separada que se perdía durante la exportación a parquet. El síntoma es que
 	todos los fecha_hora_inicio terminan en 00:00 aunque hora_inicio tenga
-	valores reales (no cero). Si esto ocurre, se descarta el cache y se
+	valores reales (no cero). Si esto ocurre, el llamador descarta el cache y lo
 	reconstruye concatenando fecha + hora desde los crudos.
+
+	Args:
+		gdf: DataFrame leído desde el cache parquet a inspeccionar.
+
+	Returns:
+		True si todas las horas no triviales aparecen truncadas a medianoche;
+		False en caso contrario o si faltan las columnas necesarias.
 	"""
 	hora_inicio = next((c for c in gdf.columns if c in {"hora_inicio", "hora"}), None)
 	if not hora_inicio or "fecha_hora_inicio" not in gdf.columns:
@@ -263,10 +361,17 @@ def _looks_like_lost_time_component(gdf: pd.DataFrame) -> bool:
 def load_conaf(refresh: bool = False, save_clean: bool = True) -> gpd.GeoDataFrame:
 	"""Carga el dataset CONAF, descargando si es necesario.
 
-	Parameters
-	----------
-	refresh : si True, vuelve a descargar incluso si ya hay archivos en disco.
-	save_clean : si True, guarda copia limpia en data/interim/conaf_clean.parquet.
+	Usa el cache limpio en parquet cuando existe y sus timestamps están
+	completos; en caso contrario, descarga o lee los crudos, los limpia y
+	opcionalmente guarda el resultado.
+
+	Args:
+		refresh: Si es True, vuelve a descargar incluso si ya hay archivos en disco.
+		save_clean: Si es True, guarda la copia limpia en
+			data/interim/conaf_clean.parquet.
+
+	Returns:
+		GeoDataFrame limpio del registro histórico de incendios de CONAF.
 	"""
 	if not refresh and CLEAN_PARQUET.exists():
 		logger.info("Cargando cache limpio: %s", CLEAN_PARQUET)

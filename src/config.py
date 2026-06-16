@@ -82,6 +82,15 @@ load_dotenv(BASE_DIR / ".env")
 
 
 def _env(name: str, default: str | None = None) -> str | None:
+	"""Lee una variable de entorno y la limpia.
+
+	Args:
+		name: Nombre de la variable de entorno.
+		default: Valor a devolver si la variable está ausente o vacía.
+
+	Returns:
+		El valor sin espacios sobrantes, o `default` si está ausente o vacía.
+	"""
 	value = os.getenv(name)
 	if value is None or not value.strip():
 		os.environ.pop(name, None)
@@ -102,6 +111,7 @@ FIRMS_RAW_DIR = DATA_RAW / "firms"
 
 
 def ensure_dirs() -> None:
+	"""Crea los directorios de datos del proyecto si no existen."""
 	for d in (DATA_RAW, DATA_INTERIM, DATA_PROCESSED, DATA_MODELS, CONAF_RAW_DIR, ERA5_RAW_DIR, FIRMS_RAW_DIR):
 		d.mkdir(parents=True, exist_ok=True)
 

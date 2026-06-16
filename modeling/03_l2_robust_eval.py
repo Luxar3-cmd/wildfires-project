@@ -13,6 +13,7 @@ B. Proxy: ¿los scores del modelo L1 rankean alto los eventos L2? AUC de L1-scor
 Salida: eda/L2_Robust_Eval_Report.html
 """
 import base64
+import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -27,35 +28,37 @@ from sklearn.base import clone
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-DATA = Path("data/processed/conaf_enriched_2012_2018.parquet")
-OUT_HTML = Path("eda/L2_Robust_Eval_Report.html")
-
-RANDOM_STATE = 42
-N_SPLITS = 5
-N_REPEATS = 20
-MEGAFIRE_HA = 1000
-
-# Configuración de features — debe coincidir con modeling/02_l1_vs_l2_experiment.py
-LOCATION = ["latitud", "longitud", "region", "provincia", "comuna"]
-IGNITION_TIME = ["month", "hour", "day_of_year"]
-ERA5_TEMPORAL = ["t2m", "d2m", "u10", "v10", "tp", "ssrd",
-                 "stl1", "stl2", "stl3", "stl4",
-                 "swvl1", "swvl2", "swvl3", "swvl4",
-                 "pev", "e", "lai_hv", "lai_lv"]
-ERA5_STATIC = ["slt", "lsm", "cvh", "cvl", "tvh", "tvl"]
-DERIVED = ["t2m_celsius", "d2m_celsius",
-           "stl1_celsius", "stl2_celsius", "stl3_celsius", "stl4_celsius",
-           "relative_humidity", "vpd_hpa", "wind_speed", "wind_direction", "tp_mm"]
-FEATURE_COLS = LOCATION + IGNITION_TIME + ERA5_TEMPORAL + ERA5_STATIC + DERIVED
-
-XGB_PARAMS = dict(
-    n_estimators=300, max_depth=4, learning_rate=0.05, subsample=0.8,
-    colsample_bytree=0.8, reg_lambda=1.0, random_state=RANDOM_STATE, n_jobs=-1,
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from src.config import BASE_DIR, DATA_PROCESSED  # noqa: E402
+from src.modeling_features import (  # noqa: E402
+    FEATURE_COLS,
+    MEGAFIRE_HA_THRESHOLD,
+    N_SPLITS,
+    RANDOM_STATE,
+    STUDY_REGIONS,
+    XGB_PARAMS,
 )
+
+DATA = DATA_PROCESSED / "conaf_enriched_2012_2018.parquet"
+OUT_HTML = BASE_DIR / "eda" / "L2_Robust_Eval_Report.html"
+
+N_REPEATS = 20
+MEGAFIRE_HA = MEGAFIRE_HA_THRESHOLD
 
 
 def load():
+    """Carga el dataset 2012-2018 y prepara features, etiquetas y columnas usables.
+
+    Deriva las columnas temporales, codifica las categóricas a enteros, fuerza las
+    features a numérico y descarta filas sin target/label_l2 o sin features válidas.
+
+    Returns:
+        Tupla ``(df, cols)`` con el DataFrame filtrado y la lista de columnas de
+        features presentes y no totalmente nulas.
+    """
     df = pd.read_parquet(DATA)
+    df = df[df["region"].astype(str).isin(STUDY_REGIONS)].copy()
     ts = pd.to_datetime(df["fecha_hora_inicio"], errors="coerce")
     df["month"], df["hour"], df["day_of_year"] = ts.dt.month, ts.dt.hour, ts.dt.dayofyear
     df["region_name"] = df["region"].astype(str)
@@ -71,12 +74,29 @@ def load():
 
 
 def make_model(y):
+    """Crea un XGBClassifier con ``scale_pos_weight`` ajustado a la clase rara.
+
+    Args:
+        y: Vector de etiquetas binarias del conjunto de entrenamiento.
+
+    Returns:
+        Clasificador XGBoost sin entrenar, con los hiperparámetros compartidos.
+    """
     spw = (len(y) - y.sum()) / max(y.sum(), 1)
-    return xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw, eval_metric="aucpr")
+    return xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw)
 
 
 def repeated_cv(X, y):
-    """CV estratificada repetida: ROC/PR-AUC por repetición (OOF) + OOF promedio para ranking."""
+    """Ejecuta validación cruzada estratificada repetida y agrega métricas OOF.
+
+    Args:
+        X: Matriz de features (n_muestras, n_features).
+        y: Vector de etiquetas binarias.
+
+    Returns:
+        Tupla ``(rocs, prs, oof_mean)``: arrays de ROC-AUC y PR-AUC por repetición
+        (out-of-fold) y la probabilidad OOF promedio por muestra (para ranking).
+    """
     rocs, prs = [], []
     oof_sum = np.zeros(len(y))
     for rep in range(N_REPEATS):
@@ -89,11 +109,30 @@ def repeated_cv(X, y):
 
 
 def ci(a):
+    """Calcula media e intervalo de confianza al 95% (percentiles 2.5 y 97.5).
+
+    Args:
+        a: Secuencia de valores (p. ej. una métrica por repetición).
+
+    Returns:
+        Tupla ``(media, límite_inferior, límite_superior)``.
+    """
     return float(np.mean(a)), float(np.percentile(a, 2.5)), float(np.percentile(a, 97.5))
 
 
 def lopo_percentiles(X, y):
-    """Leave-One-Positive-Out: entrena sin cada positivo y reporta su percentil de riesgo."""
+    """Leave-One-Positive-Out: deja fuera cada positivo y reporta su percentil de riesgo.
+
+    Para cada muestra positiva entrena el modelo sin ella y mide en qué percentil de
+    riesgo la ubica el modelo entrenado sin verla.
+
+    Args:
+        X: Matriz de features.
+        y: Vector de etiquetas binarias.
+
+    Returns:
+        Lista de tuplas ``(idx, prob, percentil)`` por cada positivo.
+    """
     pos = np.where(y == 1)[0]
     out = []
     for p in pos:
@@ -108,12 +147,30 @@ def lopo_percentiles(X, y):
 
 
 def recall_at(scores, y, top_pct):
+    """Calcula el recall al marcar como positivo el ``top_pct`` % de mayor score.
+
+    Args:
+        scores: Puntajes de riesgo por muestra.
+        y: Vector de etiquetas binarias.
+        top_pct: Porcentaje superior de scores a marcar como positivo.
+
+    Returns:
+        Fracción de positivos reales capturados en ese top.
+    """
     thr = np.percentile(scores, 100 - top_pct)
     flagged = scores >= thr
     return float((flagged & (y == 1)).sum() / max((y == 1).sum(), 1))
 
 
 def fig_b64(fig):
+    """Serializa una figura de matplotlib a PNG codificado en base64.
+
+    Args:
+        fig: Figura de matplotlib a renderizar. Se cierra tras serializarla.
+
+    Returns:
+        El PNG de la figura como cadena base64 (para incrustar en HTML).
+    """
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -122,6 +179,12 @@ def fig_b64(fig):
 
 
 def main():
+    """Evalúa L2 de forma robusta y testea L1 como proxy de L2; escribe el reporte HTML.
+
+    Ejecuta CV repetida con intervalos de confianza, Leave-One-Positive-Out y métricas
+    por ranking sobre L2, además del análisis de proxy L1→L2, y vuelca todo en
+    ``OUT_HTML``.
+    """
     print("Cargando data 2012-2018...")
     df, cols = load()
     X = df[cols].values

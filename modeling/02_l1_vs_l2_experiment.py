@@ -1,5 +1,6 @@
 import json
 import base64
+import sys
 from pathlib import Path
 from io import BytesIO
 
@@ -16,19 +17,79 @@ import quantus.helpers.asserts as quantus_asserts
 
 # Monkey-patch Quantus to support XGBoost/tabular models
 class TabularModelWrapper:
+    """Adaptador mínimo que envuelve un modelo tabular para la API de Quantus.
+
+    Quantus asume modelos tipo red neuronal; este wrapper expone la interfaz que
+    espera (``predict``, ``shape_input``, ...) delegando en un clasificador
+    sklearn/XGBoost.
+    """
+
     def __init__(self, model):
+        """Guarda el modelo envuelto.
+
+        Args:
+            model: Clasificador con método ``predict_proba`` (p. ej. XGBClassifier).
+        """
         self.model = model
+
     def predict(self, x, **kwargs):
+        """Devuelve las probabilidades de clase del modelo envuelto.
+
+        Args:
+            x: Matriz de características (n_muestras, n_features).
+            **kwargs: Ignorados; presentes por compatibilidad con Quantus.
+
+        Returns:
+            Array de probabilidades por clase.
+        """
         return self.model.predict_proba(x)
+
     def shape_input(self, x, *args, **kwargs):
+        """Devuelve la entrada sin transformar (los datos tabulares ya tienen la forma correcta).
+
+        Args:
+            x: Matriz de características.
+            *args: Ignorados.
+            **kwargs: Ignorados.
+
+        Returns:
+            La misma matriz ``x``.
+        """
         return x
-    def get_model(self): return self.model
-    def state_dict(self): return {}
+
+    def get_model(self):
+        """Devuelve el modelo subyacente.
+
+        Returns:
+            El clasificador envuelto.
+        """
+        return self.model
+
+    def state_dict(self):
+        """Devuelve un estado vacío (los modelos de árbol no exponen pesos).
+
+        Returns:
+            Diccionario vacío.
+        """
+        return {}
 
 quantus_utils.get_wrapped_model = lambda model, **kwargs: TabularModelWrapper(model)
 
 # Fix Quantus bug for 2D tabular data in assert_value_smaller_than_input_size
 def fixed_assert(x, value, value_name):
+    """Valida que ``value`` sea menor que el tamaño de entrada, también para datos 2D.
+
+    Reemplaza el assert de Quantus, que asume tensores de imagen (>2D) y falla con
+    matrices tabulares de forma (n_muestras, n_features).
+
+    Args:
+        x: Array de entrada; tabular (2D) o de mayor dimensión.
+        value: Valor a validar (p. ej. número de features por paso).
+        value_name: Nombre del parámetro, para el mensaje de error.
+
+    Raises:
+        ValueError: Si ``value`` no es menor que el tamaño de entrada.
+    """
     if len(x.shape) > 2:
         if value >= np.prod(x.shape[2:]):
             raise ValueError(f"'{value_name}' must be smaller than input size.")
@@ -39,6 +100,16 @@ def fixed_assert(x, value, value_name):
 quantus_asserts.assert_value_smaller_than_input_size = fixed_assert
 
 def fixed_assert_features(features_in_step, input_shape):
+    """Valida la divisibilidad de features por paso, omitiendo el chequeo en datos tabulares.
+
+    Args:
+        features_in_step: Número de features perturbadas por paso.
+        input_shape: Forma de la entrada; vacía para datos tabulares.
+
+    Raises:
+        AssertionError: Si el número de features no es divisible por ``features_in_step``
+            (solo cuando ``input_shape`` no es tabular).
+    """
     if len(input_shape) == 0: # Tabular
         return # Skip check or refine
     assert np.prod(input_shape) % features_in_step == 0
@@ -48,40 +119,29 @@ quantus_asserts.assert_features_in_step = fixed_assert_features
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 
-# Paths
-DATA_PROCESSED = Path("data/processed")
-HTML_OUT = Path("eda/L1_vs_L2_Experiment_Report.html")
-
-# Configuration
-MEGAFIRE_HA_THRESHOLD = 1000
-RANDOM_STATE = 42
-N_SPLITS = 5
-
-LOCATION = ["latitud", "longitud", "region", "provincia", "comuna"]
-IGNITION_TIME = ["month", "hour", "day_of_year"]
-ERA5_TEMPORAL = ["t2m", "d2m", "u10", "v10", "tp", "ssrd",
-                 "stl1", "stl2", "stl3", "stl4",
-                 "swvl1", "swvl2", "swvl3", "swvl4",
-                 "pev", "e", "lai_hv", "lai_lv"]
-ERA5_STATIC = ["slt", "lsm", "cvh", "cvl", "tvh", "tvl"]
-DERIVED = ["t2m_celsius", "d2m_celsius",
-           "stl1_celsius", "stl2_celsius", "stl3_celsius", "stl4_celsius",
-           "relative_humidity", "vpd_hpa", "wind_speed", "wind_direction", "tp_mm"]
-
-feature_cols = LOCATION + IGNITION_TIME + ERA5_TEMPORAL + ERA5_STATIC + DERIVED
-
-XGB_PARAMS = dict(
-    n_estimators=300,
-    max_depth=4,
-    learning_rate=0.05,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    reg_lambda=1.0,
-    random_state=RANDOM_STATE,
-    n_jobs=-1,
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from src.config import BASE_DIR, DATA_PROCESSED  # noqa: E402
+from src.modeling_features import (  # noqa: E402
+    FEATURE_COLS,
+    MEGAFIRE_HA_THRESHOLD,
+    N_SPLITS,
+    RANDOM_STATE,
+    STUDY_REGIONS,
+    XGB_PARAMS,
 )
 
+HTML_OUT = BASE_DIR / "eda" / "L1_vs_L2_Experiment_Report.html"
+
 def image_to_base64(fig):
+    """Serializa una figura de matplotlib a PNG codificado en base64.
+
+    Args:
+        fig: Figura de matplotlib a renderizar. Se cierra tras serializarla.
+
+    Returns:
+        El PNG de la figura como cadena base64 (para incrustar en HTML).
+    """
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=120, bbox_inches="tight")
     plt.close(fig)
@@ -89,15 +149,26 @@ def image_to_base64(fig):
     return base64.b64encode(buf.read()).decode("utf-8")
 
 def main():
+    """Entrena los modelos L1 y L2, los explica con SHAP/Quantus y genera el reporte HTML.
+
+    Carga el dataset 2012-2018, deriva las columnas temporales, entrena dos
+    clasificadores XGBoost (L1 = área, L2 = intensidad), calcula métricas
+    out-of-fold y faithfulness (Quantus), y escribe el contraste de explicaciones
+    locales/globales en ``HTML_OUT``.
+    """
     print("Loading data 2012-2018...")
     df = pd.read_parquet(DATA_PROCESSED / "conaf_enriched_2012_2018.parquet")
-    
+    df = df[df["region"].astype(str).isin(STUDY_REGIONS)].copy()
+
     # Process features
     ts = pd.to_datetime(df["fecha_hora_inicio"], errors="coerce")
     df["month"] = ts.dt.month
     df["hour"] = ts.dt.hour
     df["day_of_year"] = ts.dt.dayofyear
     
+    # Copia local: FEATURE_COLS es la fuente única importada; no debe mutarse.
+    feature_cols = list(FEATURE_COLS)
+
     # Categorical encoding
     for c in ["region", "provincia", "comuna"]:
         df[c] = pd.Categorical(df[c]).codes
@@ -133,11 +204,11 @@ def main():
 
     # Honest metrics: out-of-fold probabilities (no train==test leakage)
     print("Cross-validating Model L1 (OOF)...")
-    oof_l1 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l1, eval_metric="aucpr")
+    oof_l1 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l1)
     p_l1 = cross_val_predict(oof_l1, X, y_l1, cv=skf, method="predict_proba")[:, 1]
 
     print("Cross-validating Model L2 (OOF)...")
-    oof_l2 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l2, eval_metric="aucpr")
+    oof_l2 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l2)
     p_l2 = cross_val_predict(oof_l2, X, y_l2, cv=skf, method="predict_proba")[:, 1]
 
     roc_l1, pr_l1 = roc_auc_score(y_l1, p_l1), average_precision_score(y_l1, p_l1)
@@ -145,11 +216,11 @@ def main():
 
     # Final full-data models, used only for SHAP/Quantus explanations
     print("Training final full-data Model L1...")
-    model_l1 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l1, eval_metric="aucpr")
+    model_l1 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l1)
     model_l1.fit(X, y_l1)
 
     print("Training final full-data Model L2...")
-    model_l2 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l2, eval_metric="aucpr")
+    model_l2 = xgb.XGBClassifier(**XGB_PARAMS, scale_pos_weight=spw_l2)
     model_l2.fit(X, y_l2)
     
     print("Explaining with SHAP...")

@@ -213,8 +213,8 @@ course</a></li>
 <li><a href="#installation-credentials" id="toc-installation-credentials">Installation &amp;
 credentials</a></li>
 <li><a href="#reproduction-end-to-end" id="toc-reproduction-end-to-end">Reproduction (end-to-end)</a></li>
-<li><a href="#results-summary-preliminary" id="toc-results-summary-preliminary">Results summary
-(preliminary)</a></li>
+<li><a href="#results-summary-work-in-progress" id="toc-results-summary-work-in-progress">Results summary (work in
+progress)</a></li>
 <li><a href="#ai-usage" id="toc-ai-usage">AI usage</a></li>
 <li><a href="#troubleshooting" id="toc-troubleshooting">Troubleshooting</a></li>
 <li><a href="#data-sources-licenses" id="toc-data-sources-licenses">Data
@@ -277,16 +277,19 @@ detections.</p>
 ├── eda/                      # Exploratory analysis (Jupyter)
 │   ├── 01_conaf_eda.ipynb            # CONAF EDA 2002–2020 (heavy-tail, maps, seasonality)
 │   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
-├── modeling/
-│   └── 01_xgboost_baseline.ipynb     # L1 baseline: XGBoost + Tree SHAP (preliminary results)
+├── modeling/                          # restricted to the 4 study regions; config in src/modeling_features.py
+│   ├── 01_xgboost_baseline.ipynb        # L1 baseline: XGBoost + Tree SHAP
+│   ├── 02_l1_vs_l2_experiment.py        # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
+│   ├── 03_l2_robust_eval.py             # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
+│   ├── 04_l2_threshold_sensitivity.py   # L2 label robustness to the FLI threshold and η_r → latex/images/
+│   └── 05_operational_triage.py         # operational utility: recall/lift per inspection budget → latex/images/
 ├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
-├── data/                     # gitignored (datasets) — see data/spec.md for ERA5 variables
+├── data/                     # gitignored (datasets)
 │   ├── raw/ · interim/ · processed/ · models/ · archive/
 ├── latex/                    # IEEE paper (Overleaf source + main.pdf)
 ├── references/               # Reference PDFs
 ├── requirements.txt · Makefile · .env.example</code></pre>
-<p>Supplementary docs (Spanish): <a href="src/README.md"><code>src/README.md</code></a> (pipeline spec), <a href="scripts/README.md"><code>scripts/README.md</code></a> (CLI), <a href="data/spec.md"><code>data/spec.md</code></a> (ERA5-Land variables
-and derived-feature formulas).</p>
+<p>Supplementary docs (Spanish): <a href="src/README.md"><code>src/README.md</code></a> (pipeline spec), <a href="scripts/README.md"><code>scripts/README.md</code></a> (CLI).</p>
 <hr />
 <h2 id="data-pipeline-architecture">Data pipeline architecture</h2>
 <pre><code>  CONAF registry            ERA5-Land (CDS)          MODIS/FIRMS (NASA)
@@ -318,10 +321,21 @@ and derived-feature formulas).</p>
                  eda/ notebooks                modeling/01_xgboost_baseline.ipynb
                  (heavy-tail, labels)          XGBoost + Tree SHAP (L1)</code></pre>
 <p><strong>Labels.</strong> <em>L1</em> — area-based mega-fire
-(<code>superficie_quemada_total_ha ≥ 1,000</code>), the target of the
-current baseline. <em>L2</em> — Extreme Wildfire Event via FRP→FLI
-conversion (≥ 10,000 kW/m, Tedim 2018) with a MODIS detection guard;
-still in progress.</p>
+(<code>superficie_quemada_total_ha ≥ 1,000</code>): a coarse but direct
+label. <em>L2</em> — a physically grounded approximation of an Extreme
+Wildfire Event (EWE), via FRP→FLI conversion (Wooster et al. 2003, 2004;
+threshold ≥ 10,000 kW/m) with a MODIS-detection / area ≥ 50 ha guard,
+computed in <code>src/modis.py</code>. <strong>Limitation:</strong> the
+full EWE definition (the standard CONAF adheres to) also requires
+<em>spread rate</em> and <em>spot distance</em>, which are only
+measurable in situ; here only FRP is available. <strong>Research
+question:</strong> is the easy-to-compute L1 (area) a valid proxy for L2
+(intensity)? The modeling experiments
+(<code>modeling/02</code>–<code>05</code>, restricted to the four study
+regions) find the two <strong>complementary, not
+interchangeable</strong>: the area score ranks intensity events well
+(L1→L2 AUC ≈ 0.89) but structurally misses small, high-intensity fires,
+and their Tree SHAP drivers diverge.</p>
 <hr />
 <h2 id="installation-credentials">Installation &amp; credentials</h2>
 <p>Python 3.12 recommended (Fedora/RHEL:
@@ -363,7 +377,7 @@ ERA5-Land license)</td>
 key: YOUR-API-KEY</code></pre>
 <p>Run <code>make help</code> for all targets (<code>setup</code>,
 <code>notebook</code>, <code>test</code>, <code>lint</code>,
-<code>readme</code>, <code>clean</code>).</p>
+<code>readme</code>, <code>report</code>, <code>clean</code>).</p>
 <hr />
 <h2 id="reproduction-end-to-end">Reproduction (end-to-end)</h2>
 <div class="sourceCode" id="cb5"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. Smoke test (no downloads, single year) — verifies the pipeline wiring</span></span>
@@ -372,50 +386,66 @@ key: YOUR-API-KEY</code></pre>
 <span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. Full preprocessing (downloads CONAF + ERA5-Land + MODIS, then enriches)</span></span>
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/preprocess.py <span class="at">--years</span> 2016-2017          <span class="co"># subset used by the baseline</span></span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="co">#    flags: --skip-download | --download-only | --refresh-conaf | --skip-modis | --out PATH</span></span>
-<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Per-region mega-fire thresholds (writes data/processed/megafire_thresholds.md)</span></span>
-<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/megafire_thresholds.py</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. Exploratory analysis</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> notebook                                            <span class="co"># jupyter lab eda/</span></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="co"># 5. Baseline model + explanations</span></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> lab modeling/01_xgboost_baseline.ipynb</span></code></pre></div>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co">#    --backfill: rellena celdas ERA5 sobre mar (salto a tierra ≤6 km) en un parquet ya hecho, no destructivo</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Per-region mega-fire thresholds (writes data/processed/megafire_thresholds.md)</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> scripts/megafire_thresholds.py</span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. Exploratory analysis</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> notebook                                            <span class="co"># jupyter lab eda/</span></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a><span class="co"># 5. Baseline model + explanations</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> lab modeling/01_xgboost_baseline.ipynb</span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="co"># 6. Modeling experiments (2012–2018, restricted to the 4 study regions)</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/02_l1_vs_l2_experiment.py      <span class="co"># L1 vs L2 contrast + Quantus faithfulness</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/03_l2_robust_eval.py           <span class="co"># robust L2 eval (repeated CV + LOPO) + L1→L2 proxy</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/04_l2_threshold_sensitivity.py <span class="co"># L2 label robustness to FLI threshold / η_r</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/05_operational_triage.py       <span class="co"># operational utility (recall/lift per budget)</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="co"># 7. Session report (docs/reporte_e3.html)</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> report</span></code></pre></div>
 <p>The enriched dataset is also shipped compressed at the repo root
 (<code>conaf_enriched_latest.tar.gz</code>) so the notebooks can run
 without re-downloading the source APIs.</p>
 <hr />
-<h2 id="results-summary-preliminary">Results summary (preliminary)</h2>
-<p>L1 baseline (XGBoost, stratified 5-fold CV) on the 2016–2017 subset
-of four south-central regions (Maule, Biobío, Araucanía, O’Higgins):
-8,650 events with valid ERA5 coverage, 42 mega-fires
-(<code>≥ 1,000</code> ha, prevalence 0.49%).</p>
-<table>
-<thead>
-<tr>
-<th>Metric</th>
-<th>Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>ROC-AUC</td>
-<td>0.947 ± 0.025</td>
-</tr>
-<tr>
-<td>PR-AUC (average precision)</td>
-<td>0.269 ± 0.076</td>
-</tr>
-<tr>
-<td>PR-AUC baseline (prevalence)</td>
-<td>0.0049</td>
-</tr>
-</tbody>
-</table>
-<p>Top Tree SHAP drivers: soil temperature (<code>stl2</code>),
-seasonality (<code>day_of_year</code>), and total evaporation
-(<code>e</code>) — a physically coherent, environment-dominated signal.
-Full analysis, figures, and discussion are in <a href="latex/main.pdf"><code>latex/main.pdf</code></a>.</p>
+<h2 id="results-summary-work-in-progress">Results summary (work in
+progress)</h2>
+<p>Modeling uses the <strong>2012–2018</strong> dataset restricted to
+the four study regions (Maule, Biobío, Araucanía, O’Higgins):
+<strong>30,511 modelable events, L1 = 76 positives, L2 = 11</strong>.
+All metrics are honest out-of-fold (stratified CV, repeated 20× for L2
+to attach confidence intervals).</p>
+<ul>
+<li><strong>Discrimination</strong> (<code>modeling/03</code>): L1
+ROC-AUC 0.914 [0.899, 0.930]; L2 ROC-AUC 0.854 [0.703, 0.916] — the wide
+L2 interval is the honest signature of 11 positives.</li>
+<li><strong>Research question</strong> — is L1 (area) a proxy for L2
+(intensity)? The area-trained score ranks the EWE events with AUC ≈ 0.89
+and, under leave-one-positive-out, all 11 rank above the 68th risk
+percentile (it generalizes), yet only 6/11 EWEs are also area mega-fires
+and the Tree SHAP drivers diverge. <strong>L1 is a partial proxy, not a
+substitute</strong> — area and intensity are complementary.</li>
+<li><strong>Robustness</strong> (<code>modeling/04</code>): the
+conclusion holds across the plausible range of the FLI threshold and
+η_r.</li>
+<li><strong>Operational utility</strong> (<code>modeling/05</code>): as
+a triage ranker, the top-10% risk captures ~80% of mega-fires and 82% of
+EWEs (8× over random); the bottleneck is precision (class prevalence),
+not recall.</li>
+<li><strong>Faithfulness</strong> (<code>modeling/02</code>): Tree SHAP
+is exact by construction; Faithfulness Correlation (Bhatt et al.,
+<ol start="2020" type="1">
+<li>corroborates it, while Faithfulness Estimate (Alvarez-Melis &amp;
+Jaakkola, 2018) is unreliable on non-linear models (Miró-Nicolau et al.,
+2025).</li>
+</ol></li>
+</ul>
+<p>The central limitation remains the EWE label: only FRP is available
+(not in-situ spread rate / spot distance), so the intensity model is
+capable but high-variance.</p>
+<p>Honest performance metrics are reported out-of-fold (stratified CV);
+full analysis, figures, and discussion go in <a href="latex/main.pdf"><code>latex/main.pdf</code></a>.</p>
 <hr />
 <h2 id="ai-usage">AI usage</h2>
 <p>This project was developed with the assistance of an AI coding
@@ -453,8 +483,8 @@ seasonality)</td>
 </tr>
 <tr>
 <td><strong>Model + XAI</strong></td>
-<td>XGBoost baseline, cross-validation, Tree SHAP, figure
-generation</td>
+<td>XGBoost baseline, cross-validation, Tree SHAP, Quantus faithfulness,
+figure generation</td>
 <td>Threshold/feature choices, leakage control, reading of
 explanations</td>
 </tr>

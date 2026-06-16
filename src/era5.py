@@ -157,7 +157,14 @@ INVARIANT_KEYS = ["slt", "lsm", "cvh", "cvl", "tvh", "tvl"]
 
 
 def _client() -> cdsapi.Client:
-	"""Construye el cliente CDS leyendo credenciales desde el .env."""
+	"""Construye el cliente CDS leyendo credenciales desde el .env.
+
+	Usa CDSAPI_KEY/CDSAPI_URL si están definidas; si no, cae al fallback de
+	~/.cdsapirc. Aplica los parámetros de conexión (timeout, retry_max, sleep_max).
+
+	Returns:
+		Cliente cdsapi.Client configurado.
+	"""
 	options = {
 		"timeout": CDS_TIMEOUT_SECONDS,
 		"retry_max": CDS_RETRY_MAX,
@@ -170,14 +177,41 @@ def _client() -> cdsapi.Client:
 
 
 def era5_year_path(year: int, out_dir: Path = ERA5_RAW_DIR) -> Path:
+	"""Devuelve la ruta del NetCDF anual de ERA5-Land para un año dado.
+
+	Args:
+		year: Año de los datos.
+		out_dir: Directorio de salida.
+
+	Returns:
+		Ruta al archivo NetCDF del año.
+	"""
 	return out_dir / f"era5_land_{year}.nc"
 
 
 def era5_month_path(year: int, month: int, out_dir: Path = ERA5_RAW_DIR) -> Path:
+	"""Devuelve la ruta del NetCDF mensual de ERA5-Land para un (año, mes) dado.
+
+	Args:
+		year: Año de los datos.
+		month: Mes de los datos.
+		out_dir: Directorio de salida.
+
+	Returns:
+		Ruta al archivo NetCDF del mes.
+	"""
 	return out_dir / f"era5_land_{year}_{month:02d}.nc"
 
 
 def era5_invariants_path(out_dir: Path = ERA5_RAW_DIR) -> Path:
+	"""Devuelve la ruta del NetCDF de invariantes de ERA5-Land.
+
+	Args:
+		out_dir: Directorio de salida.
+
+	Returns:
+		Ruta al archivo NetCDF de invariantes.
+	"""
 	return out_dir / "era5_land_invariants.nc"
 
 
@@ -188,6 +222,18 @@ def _request(
 	bbox: dict,
 	variables: list[str],
 ) -> dict:
+	"""Arma el dict de request para reanalysis-era5-land en formato NetCDF horario.
+
+	Args:
+		year: Año a solicitar.
+		months: Meses a solicitar (lista de strings "MM").
+		days: Días a solicitar (lista de strings "DD").
+		bbox: Bounding box con claves north/west/south/east.
+		variables: Variables a solicitar (long-names del API de CDS).
+
+	Returns:
+		Dict de request listo para client.retrieve().
+	"""
 	# Nota: el API de CDS espera el bbox como [north, west, south, east],
 	# que es el orden inverso al convencional (min_lat, min_lon, max_lat, max_lon).
 	return {
@@ -203,6 +249,17 @@ def _request(
 
 
 def _retrieve(request: dict, target: Path) -> None:
+	"""Ejecuta el retrieve del CDS y traduce errores HTTP/red a mensajes accionables.
+
+	Args:
+		request: Dict de request para reanalysis-era5-land.
+		target: Ruta donde guardar el archivo descargado.
+
+	Raises:
+		RuntimeError: Si faltan las licencias requeridas de ERA5-Land, si el CDS
+			responde 500, o si falla la conexión al servicio.
+		requests.HTTPError: Para otros errores HTTP no contemplados explícitamente.
+	"""
 	try:
 		_client().retrieve("reanalysis-era5-land", request, str(target))
 	except requests.HTTPError as e:
@@ -229,11 +286,17 @@ def _retrieve(request: dict, target: Path) -> None:
 
 
 def _normalize_lon(ds):
-	"""Convierte longitudes 0-360 → -180/180, redondea lat/lon a GRID_DECIMALS y ordena.
+	"""Convierte longitudes 0-360 a -180/180, redondea lat/lon a GRID_DECIMALS y ordena.
 
 	El redondeo + reasignación deja las grillas de todos los lotes bit-idénticas, de modo
 	que xr.merge(join='outer') ya no crea columnas de longitud duplicadas por diferencias
 	de ULP de float64. Único punto por el que pasan todos los datasets antes de ambos merge.
+
+	Args:
+		ds: Dataset de xarray con coordenada longitude (y opcionalmente latitude).
+
+	Returns:
+		El Dataset con longitudes normalizadas, lat/lon redondeadas y ordenado por longitude.
 	"""
 	lon = ds["longitude"].values
 	if (lon > 180).any():
@@ -244,11 +307,43 @@ def _normalize_lon(ds):
 	return ds.sortby("longitude")
 
 
+def _align_to_ref(ds, ref):
+	"""Reindexa lat/lon de un dataset a la grilla de referencia (nearest, tolerancia sub-celda).
+
+	Alinea lotes del CDS que difieren por ULP de float en sus coordenadas, para que
+	xr.merge no cree columnas de longitud gemelas (que dejarían a una variable presente
+	solo en un lote —p. ej. evavt— en una columna que luego se descartaría).
+
+	Args:
+		ds: Dataset a realinear.
+		ref: Dataset de referencia cuya grilla lat/lon se adopta.
+
+	Returns:
+		El dataset reindexado a la grilla de `ref` (o sin cambios si no comparte coords).
+	"""
+	idx = {}
+	if "latitude" in ds.coords and "latitude" in ref.coords:
+		idx["latitude"] = ref["latitude"]
+	if "longitude" in ds.coords and "longitude" in ref.coords:
+		idx["longitude"] = ref["longitude"]
+	if not idx:
+		return ds
+	return ds.reindex(method="nearest", tolerance=0.02, **idx)
+
+
 def _unzip_if_needed(path: Path) -> None:
-	"""Si el CDS entregó un ZIP en vez de NetCDF, extrae los .nc y reemplaza el archivo.
+	"""Extrae los .nc de un ZIP del CDS y reemplaza el archivo, si vino comprimido.
 
 	CDS puede entregar un ZIP con un único NetCDF (caso habitual) o con un NetCDF
-	por variable (caso raro en invariantes). Si hay múltiples NCs, los fusiona con xarray.
+	por variable (caso raro en invariantes). Si hay múltiples NCs, los normaliza
+	(longitud y dimensión time degenérada) y los fusiona con xarray. Si el archivo
+	no es un ZIP, no hace nada.
+
+	Args:
+		path: Ruta al archivo descargado que podría ser un ZIP.
+
+	Raises:
+		RuntimeError: Si el ZIP no contiene ningún NetCDF en su interior.
 	"""
 	if not zipfile.is_zipfile(path):
 		return
@@ -297,10 +392,24 @@ def deduplicate_lon(
 	"""Deduplica la grilla de longitud de un NetCDF ERA5: in-place, lossless e idempotente.
 
 	El xr.merge de los lotes descargados del CDS (longitudes que difieren por ULP de
-	float64) duplica cada columna de longitud: una con datos + su gemela 100% NaN. Aquí,
-	por cada longitud única (redondeada a `decimals`) se conserva la columna con datos y se
-	descarta la fantasma. Preserva el encoding (compresión/packing) del original y hace
-	backup no destructivo antes de reescribir. Si el archivo ya está limpio, no hace nada.
+	float64) duplica cada columna de longitud: una con datos + su gemela donde esas mismas
+	variables son NaN. Aquí, por cada longitud única (redondeada a `decimals`) se combinan
+	las gemelas celda a celda tomando el primer valor no-NaN, de modo que una variable
+	presente solo en una gemela (p. ej. evavt) no se pierde. Preserva el encoding del
+	original y hace backup no destructivo antes de reescribir. Si el archivo ya está limpio,
+	no hace nada.
+
+	Args:
+		path: Ruta al NetCDF a deduplicar (se reescribe in-place).
+		backup_dir: Directorio donde copiar el original antes de reescribir; None para
+			no hacer backup.
+		ref_var: Obsoleto (se mantiene por compatibilidad de firma); ya no se usa, pues las
+			gemelas se combinan en vez de descartarse según una variable de referencia.
+		decimals: Decimales a los que se redondea la longitud para agrupar gemelas.
+
+	Returns:
+		Dict con métricas de la operación: path, skipped (True si ya estaba limpio),
+		n_lon y, si se deduplicó, n_unique y removed.
 	"""
 	with xr.open_dataset(path) as ds:
 		lon = ds["longitude"].values
@@ -309,20 +418,22 @@ def deduplicate_lon(
 		if uniq.size == lon.size:
 			return {"path": str(path), "skipped": True, "n_lon": int(lon.size)}
 
-		ref_name = next((v for v in ds.data_vars if VAR_RENAMES.get(v, v) == ref_var), None) \
-			or next(iter(ds.data_vars))
-		ref = ds[ref_name]
-		ghost = ref.isnull().all(dim=[d for d in ref.dims if d != "longitude"]).values
-
-		keep: list[int] = []
+		# Combina las columnas de longitud gemelas en vez de descartar una de ellas: para
+		# cada longitud única toma, celda a celda, el primer valor no-NaN entre las gemelas.
+		# Así no se pierde una variable que vive solo en una de ellas (p. ej. evavt, que
+		# llega en un lote propio con la grilla desfasada).
+		ds_r = ds.assign_coords(longitude=lon_r)
+		parts = []
 		for u in uniq:
 			twins = np.where(lon_r == u)[0]
-			real = [int(j) for j in twins if not ghost[j]]
-			keep.append(real[0] if real else int(twins[0]))
+			sub = ds_r.isel(longitude=twins)
+			combined = sub.isel(longitude=0)
+			for j in range(1, int(twins.size)):
+				combined = combined.combine_first(sub.isel(longitude=j))
+			parts.append(combined)
+		clean = xr.concat(parts, dim="longitude").load()
 
-		clean = ds.isel(longitude=keep).load()
-
-	clean = clean.assign_coords(longitude=np.round(clean["longitude"].values, decimals))
+	clean = clean.assign_coords(longitude=uniq)
 	# Compresión zlib uniforme: evita inflar el disco sin arriesgar el packing original
 	# (copiar dtype/scale_factor del NetCDF leído puede truncar datos o pasar claves inválidas).
 	enc = {v: {"zlib": True, "complevel": 4} for v in clean.data_vars}
@@ -336,11 +447,20 @@ def deduplicate_lon(
 	tmp.replace(path)
 	return {
 		"path": str(path), "skipped": False, "n_lon": int(lon.size),
-		"n_unique": int(uniq.size), "removed": int(lon.size - len(keep)),
+		"n_unique": int(uniq.size), "removed": int(lon.size - uniq.size),
 	}
 
 
 def _var_batches(variables: list[str], batch_size: int) -> list[list[str]]:
+	"""Parte la lista de variables en lotes de tamaño máximo batch_size.
+
+	Args:
+		variables: Variables a dividir.
+		batch_size: Tamaño máximo de cada lote.
+
+	Returns:
+		Lista de lotes (sublistas) de variables.
+	"""
 	return [variables[i : i + batch_size] for i in range(0, len(variables), batch_size)]
 
 
@@ -355,6 +475,16 @@ def download_era5_year(
 
 	Útil para años históricos completos. Para años parciales o corridas
 	incrementales, preferir download_era5_month / download_era5_months.
+
+	Args:
+		year: Año a descargar.
+		bbox: Bounding box (claves north/west/south/east); None usa CHILE_BBOX.
+		variables: Variables a descargar; None usa ERA5_VARIABLES.
+		out_dir: Directorio de salida.
+		overwrite: Si False y el archivo ya existe, omite la descarga.
+
+	Returns:
+		Ruta al NetCDF anual descargado (o existente).
 	"""
 	bbox = bbox or CHILE_BBOX
 	variables = list(variables or ERA5_VARIABLES)
@@ -389,6 +519,19 @@ def download_era5_month(
 	Si el número de variables supera `max_vars_per_request`, divide en lotes y
 	fusiona los NetCDF resultantes con xarray. La nueva API de CDS rechaza
 	requests con demasiadas variables × timesteps en un solo call.
+
+	Args:
+		year: Año a descargar.
+		month: Mes a descargar.
+		days: Días específicos del mes; None descarga el mes completo.
+		bbox: Bounding box (claves north/west/south/east); None usa CHILE_BBOX.
+		variables: Variables a descargar; None usa ERA5_VARIABLES.
+		out_dir: Directorio de salida.
+		overwrite: Si False y el archivo ya existe, omite la descarga.
+		max_vars_per_request: Máximo de variables por request antes de dividir en lotes.
+
+	Returns:
+		Ruta al NetCDF mensual descargado (o existente).
 	"""
 	bbox = bbox or CHILE_BBOX
 	variables = list(variables or ERA5_VARIABLES)
@@ -427,7 +570,13 @@ def download_era5_month(
 		logger.info("Fusionando %d lotes → %s", len(temp_paths), target)
 		datasets = [_normalize_lon(xr.open_dataset(p, engine="netcdf4")) for p in temp_paths]
 		try:
-			xr.merge(datasets).to_netcdf(target, engine="netcdf4")
+			# Reindexa cada lote a la grilla del primero antes del merge: los lotes del CDS
+			# pueden venir con longitudes desfasadas por ULP de float y, sin alinear,
+			# xr.merge(join='outer') crea columnas de longitud gemelas. Una variable que
+			# llega sola en su lote (p. ej. evavt) quedaría en la gemela que luego se pierde.
+			ref = datasets[0]
+			aligned = [datasets[0]] + [_align_to_ref(d, ref) for d in datasets[1:]]
+			xr.merge(aligned).to_netcdf(target, engine="netcdf4")
 		finally:
 			for ds in datasets:
 				ds.close()
@@ -445,7 +594,18 @@ def download_era5_months(
 	out_dir: Path = ERA5_RAW_DIR,
 	overwrite: bool = False,
 ) -> list[Path]:
-	"""Descarga ERA5-Land para una lista de (año, mes) o (año, mes, días)."""
+	"""Descarga ERA5-Land para una lista de (año, mes) o (año, mes, días).
+
+	Args:
+		year_months: Iterable de tuplas (año, mes) o (año, mes, (días,)).
+		bbox: Bounding box (claves north/west/south/east); None usa CHILE_BBOX.
+		variables: Variables a descargar; None usa ERA5_VARIABLES.
+		out_dir: Directorio de salida.
+		overwrite: Si False y un archivo ya existe, omite esa descarga.
+
+	Returns:
+		Lista de rutas a los NetCDF mensuales descargados (o existentes).
+	"""
 	paths = []
 	for item in sorted(set(year_months)):
 		year, month = int(item[0]), int(item[1])
@@ -462,7 +622,19 @@ def download_era5_range(
 	out_dir: Path = ERA5_RAW_DIR,
 	overwrite: bool = False,
 ) -> list[Path]:
-	"""Descarga ERA5-Land para un rango de años completos (inclusivo)."""
+	"""Descarga ERA5-Land para un rango de años completos (inclusivo).
+
+	Args:
+		start_year: Primer año del rango.
+		end_year: Último año del rango (inclusivo).
+		bbox: Bounding box (claves north/west/south/east); None usa CHILE_BBOX.
+		variables: Variables a descargar; None usa ERA5_VARIABLES.
+		out_dir: Directorio de salida.
+		overwrite: Si False y un archivo ya existe, omite esa descarga.
+
+	Returns:
+		Lista de rutas a los NetCDF anuales descargados (o existentes).
+	"""
 	paths = []
 	for year in range(start_year, end_year + 1):
 		paths.append(download_era5_year(year, bbox, variables, out_dir, overwrite))
@@ -481,6 +653,15 @@ def download_era5_invariants(
 	no varían con el tiempo. El API de CDS igual requiere una fecha; se usa
 	2002-01-01 como sentinel arbitrario. El NetCDF resultante tendrá una
 	dimensión temporal degenérada (size=1) que se elimina al extraer con squeeze().
+
+	Args:
+		bbox: Bounding box (claves north/west/south/east); None usa CHILE_BBOX.
+		invariants: Variables invariantes a descargar; None usa ERA5_INVARIANTS.
+		out_dir: Directorio de salida.
+		overwrite: Si False y el archivo ya existe, omite la descarga.
+
+	Returns:
+		Ruta al NetCDF de invariantes descargado (o existente).
 	"""
 	bbox = bbox or CHILE_BBOX
 	invariants = list(invariants or ERA5_INVARIANTS)
@@ -515,7 +696,14 @@ def download_era5_invariants(
 
 
 def _utc_naive_timestamp(ts: pd.Timestamp) -> pd.Timestamp:
-	"""Normaliza cualquier timestamp a UTC naive (sin tzinfo) para comparar con xarray."""
+	"""Normaliza cualquier timestamp a UTC naive (sin tzinfo) para comparar con xarray.
+
+	Args:
+		ts: Timestamp de entrada, con o sin zona horaria.
+
+	Returns:
+		El timestamp en UTC sin tzinfo, o pd.NaT si la entrada es nula.
+	"""
 	value = pd.Timestamp(ts)
 	if pd.isna(value):
 		return pd.NaT
@@ -525,7 +713,17 @@ def _utc_naive_timestamp(ts: pd.Timestamp) -> pd.Timestamp:
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-	"""Distancia haversine en km entre dos puntos (lat, lon) en grados."""
+	"""Calcula la distancia haversine en km entre dos puntos (lat, lon) en grados.
+
+	Args:
+		lat1: Latitud del primer punto, en grados.
+		lon1: Longitud del primer punto, en grados.
+		lat2: Latitud del segundo punto, en grados.
+		lon2: Longitud del segundo punto, en grados.
+
+	Returns:
+		Distancia haversine en kilómetros.
+	"""
 	r = 6371.0
 	phi1, phi2 = np.radians(lat1), np.radians(lat2)
 	dphi = np.radians(lat2 - lat1)
@@ -535,7 +733,14 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def _nan_result() -> dict:
-	"""Dict vacío con todas las claves en None — se usa cuando lat/lon/ts son inválidos."""
+	"""Construye el dict de resultado con todas las claves en None y quality "missing".
+
+	Se usa cuando lat/lon/ts son inválidos y no se puede extraer ningún valor.
+
+	Returns:
+		Dict con las claves de EXPECTED_KEYS en None, las métricas era5_* en None y
+		era5_match_quality = "missing".
+	"""
 	out = {k: None for k in EXPECTED_KEYS}
 	out["era5_dist_km"] = None
 	out["era5_dt_hours"] = None
@@ -550,10 +755,18 @@ def build_land_index(ds: xr.Dataset, ref_var: str = "t2m"):
 	ERA5-Land es un producto solo-tierra: las celdas sobre mar son NaN. Para un
 	punto cuyo grid cell más cercano cae en mar, este índice devuelve la celda de
 	tierra más cercana y su distancia haversine, habilitando el "salto a tierra"
-	(land snapping) en extract_point. Se construye una sola vez por NetCDF.
+	(land snapping) en extract_point. Se construye una sola vez por NetCDF. El vecino
+	se busca con un cKDTree en proyección equirectangular (longitud escalada por
+	cos(lat medio)); el km exacto se recalcula con haversine real.
 
-	Devuelve una función nearest_land(lat, lon) -> (lat, lon, dist_km), o None si la
-	variable de referencia no existe o no hay celdas de tierra en el NetCDF.
+	Args:
+		ds: Dataset de xarray con la variable de referencia y coordenadas lat/lon.
+		ref_var: Variable usada para distinguir tierra (no-NaN) de mar (NaN).
+
+	Returns:
+		Función nearest_land(lat, lon) -> (lat, lon, dist_km) que devuelve la celda de
+		tierra más cercana, o None si la variable de referencia no existe o no hay
+		celdas de tierra en el NetCDF.
 	"""
 	ref_name = next((v for v in ds.data_vars if VAR_RENAMES.get(v, v) == ref_var), None)
 	if ref_name is None:
@@ -581,6 +794,16 @@ def build_land_index(ds: xr.Dataset, ref_var: str = "t2m"):
 	tree = cKDTree(np.column_stack([land_lat, land_lon * coslat]))
 
 	def nearest_land(lat: float, lon: float) -> tuple[float, float, float]:
+		"""Busca la celda de tierra más cercana al punto consultado.
+
+		Args:
+			lat: Latitud del punto, en grados.
+			lon: Longitud del punto, en grados.
+
+		Returns:
+			Tupla (lat, lon, dist_km) de la celda de tierra más cercana, con la
+			distancia haversine real en kilómetros.
+		"""
 		_, i = tree.query([lat, lon * coslat])
 		llat, llon = float(land_lat[i]), float(land_lon[i])
 		return llat, llon, _haversine_km(lat, lon, llat, llon)
@@ -605,9 +828,22 @@ def extract_point(
 
 	Salto a tierra (land snapping): si la celda más cercana cae en mar (t2m NaN) y se
 	pasa `land_index` (de build_land_index), se reintenta en la celda de tierra más
-	cercana siempre que esté a ≤ MAX_LAND_SNAP_KM; la distancia del salto queda en
+	cercana siempre que esté a ≤ max_snap_km; la distancia del salto queda en
 	era5_land_snap_km. La flag refleja si efectivamente hay valor: good (directo) /
 	land_snapped (recuperado) / water (mar sin tierra dentro del tope) / poor (tiempo lejano).
+
+	Args:
+		ds: Dataset de xarray con las variables temporales de ERA5-Land.
+		lat: Latitud del punto a extraer, en grados.
+		lon: Longitud del punto a extraer, en grados.
+		ts: Timestamp objetivo (se normaliza a UTC naive).
+		land_index: Buscador de celda de tierra (de build_land_index) para el salto a
+			tierra; None desactiva el land snapping.
+		max_snap_km: Distancia máxima permitida para el salto a tierra, en kilómetros.
+
+	Returns:
+		Dict con las variables extraídas (claves de EXPECTED_KEYS, None si faltan) más
+		las métricas era5_dist_km, era5_dt_hours, era5_land_snap_km y era5_match_quality.
 	"""
 	if pd.isna(lat) or pd.isna(lon):
 		return _nan_result()
@@ -622,6 +858,15 @@ def extract_point(
 	lon_name = "longitude" if "longitude" in ds.coords else "lon"
 
 	def _select(plat: float, plon: float):
+		"""Selecciona el grid point nearest-neighbor en lat/lon y el timestamp objetivo.
+
+		Args:
+			plat: Latitud a seleccionar, en grados.
+			plon: Longitud a seleccionar, en grados.
+
+		Returns:
+			El Dataset reducido al grid point y timestamp más cercanos.
+		"""
 		return ds.sel(
 			{lat_name: plat, lon_name: plon, time_name: query_ts.to_datetime64()},
 			method="nearest",
@@ -694,7 +939,16 @@ def extract_invariant_point(ds: xr.Dataset, lat: float, lon: float) -> dict:
 
 	CDS entrega las invariantes con una dimensión temporal degenérada (size=1)
 	aunque los valores no varíen con el tiempo. El squeeze() la elimina para poder
-	hacer la selección solo por lat/lon.
+	hacer la selección solo por lat/lon. Normaliza longitudes 0-360 a -180/180 si hace
+	falta antes de seleccionar.
+
+	Args:
+		ds: Dataset de xarray con las variables invariantes de ERA5-Land.
+		lat: Latitud del punto a extraer, en grados.
+		lon: Longitud del punto a extraer, en grados.
+
+	Returns:
+		Dict con las claves de INVARIANT_KEYS (None si la variable falta o es NaN).
 	"""
 	if pd.isna(lat) or pd.isna(lon):
 		return {k: None for k in INVARIANT_KEYS}
