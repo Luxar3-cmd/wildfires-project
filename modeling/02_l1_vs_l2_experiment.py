@@ -127,6 +127,7 @@ from src.modeling_features import (  # noqa: E402
     MEGAFIRE_HA_THRESHOLD,
     N_SPLITS,
     RANDOM_STATE,
+    STUDY_REGIONS,
     XGB_PARAMS,
 )
 
@@ -157,7 +158,8 @@ def main():
     """
     print("Loading data 2012-2018...")
     df = pd.read_parquet(DATA_PROCESSED / "conaf_enriched_2012_2018.parquet")
-    
+    df = df[df["region"].astype(str).isin(STUDY_REGIONS)].copy()
+
     # Process features
     ts = pd.to_datetime(df["fecha_hora_inicio"], errors="coerce")
     df["month"] = ts.dt.month

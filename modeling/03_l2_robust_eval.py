@@ -36,6 +36,7 @@ from src.modeling_features import (  # noqa: E402
     MEGAFIRE_HA_THRESHOLD,
     N_SPLITS,
     RANDOM_STATE,
+    STUDY_REGIONS,
     XGB_PARAMS,
 )
 
@@ -57,6 +58,7 @@ def load():
         features presentes y no totalmente nulas.
     """
     df = pd.read_parquet(DATA)
+    df = df[df["region"].astype(str).isin(STUDY_REGIONS)].copy()
     ts = pd.to_datetime(df["fecha_hora_inicio"], errors="coerce")
     df["month"], df["hour"], df["day_of_year"] = ts.dt.month, ts.dt.hour, ts.dt.dayofyear
     df["region_name"] = df["region"].astype(str)
