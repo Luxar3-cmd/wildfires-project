@@ -43,9 +43,12 @@ XAI-project/
 ├── eda/                      # Exploratory analysis (Jupyter)
 │   ├── 01_conaf_eda.ipynb            # CONAF EDA 2002–2020 (heavy-tail, maps, seasonality)
 │   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
-├── modeling/
-│   ├── 01_xgboost_baseline.ipynb     # L1 baseline: XGBoost + Tree SHAP (preliminary results)
-│   └── 02_l1_vs_l2_experiment.py     # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
+├── modeling/                          # restricted to the 4 study regions; config in src/modeling_features.py
+│   ├── 01_xgboost_baseline.ipynb        # L1 baseline: XGBoost + Tree SHAP
+│   ├── 02_l1_vs_l2_experiment.py        # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
+│   ├── 03_l2_robust_eval.py             # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
+│   ├── 04_l2_threshold_sensitivity.py   # L2 label robustness to the FLI threshold and η_r → latex/images/
+│   └── 05_operational_triage.py         # operational utility: recall/lift per inspection budget → latex/images/
 ├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
 ├── data/                     # gitignored (datasets)
 │   ├── raw/ · interim/ · processed/ · models/ · archive/
@@ -96,8 +99,10 @@ Supplementary docs (Spanish): [`src/README.md`](src/README.md) (pipeline spec), 
 (Wooster et al. 2003, 2004; threshold ≥ 10,000 kW/m) with a MODIS-detection / area ≥ 50 ha guard, computed in
 `src/modis.py`. **Limitation:** the full EWE definition (the standard CONAF adheres to) also requires *spread
 rate* and *spot distance*, which are only measurable in situ; here only FRP is available. **Research question:**
-is the easy-to-compute L1 (area) a valid proxy for L2 (intensity)? The `modeling/02` experiment contrasts both
-and finds their explanations are not consistent in some cases.
+is the easy-to-compute L1 (area) a valid proxy for L2 (intensity)? The modeling experiments (`modeling/02`–`05`,
+restricted to the four study regions) find the two **complementary, not interchangeable**: the area score ranks
+intensity events well (L1→L2 AUC ≈ 0.89) but structurally misses small, high-intensity fires, and their Tree
+SHAP drivers diverge.
 
 ---
 
@@ -125,7 +130,7 @@ url: https://cds.climate.copernicus.eu/api
 key: YOUR-API-KEY
 ```
 
-Run `make help` for all targets (`setup`, `notebook`, `test`, `lint`, `readme`, `clean`).
+Run `make help` for all targets (`setup`, `notebook`, `test`, `lint`, `readme`, `report`, `clean`).
 
 ---
 
@@ -148,6 +153,15 @@ make notebook                                            # jupyter lab eda/
 
 # 5. Baseline model + explanations
 jupyter lab modeling/01_xgboost_baseline.ipynb
+
+# 6. Modeling experiments (2012–2018, restricted to the 4 study regions)
+python modeling/02_l1_vs_l2_experiment.py      # L1 vs L2 contrast + Quantus faithfulness
+python modeling/03_l2_robust_eval.py           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy
+python modeling/04_l2_threshold_sensitivity.py # L2 label robustness to FLI threshold / η_r
+python modeling/05_operational_triage.py       # operational utility (recall/lift per budget)
+
+# 7. Session report (docs/reporte_e3.html)
+make report
 ```
 
 The enriched dataset is also shipped compressed at the repo root (`conaf_enriched_latest.tar.gz`) so the
@@ -157,15 +171,25 @@ notebooks can run without re-downloading the source APIs.
 
 ## Results summary (work in progress)
 
-Work has moved from the 2016–2017 L1 baseline to the **2012–2018** dataset, with the current focus on the
-**L1 vs L2 study** (`modeling/02_l1_vs_l2_experiment.py`). That experiment (a) contrasts the drivers of fire
-*area* (L1) vs *intensity* (L2) with Tree SHAP, and (b) measures how faithful the explanations are with
-**Quantus** — Faithfulness Correlation (Bhatt et al., 2020) and Faithfulness Estimate (Alvarez-Melis &
-Jaakkola, 2018).
+Modeling uses the **2012–2018** dataset restricted to the four study regions (Maule, Biobío, Araucanía,
+O'Higgins): **30,511 modelable events, L1 = 76 positives, L2 = 11**. All metrics are honest out-of-fold
+(stratified CV, repeated 20× for L2 to attach confidence intervals).
 
-Preliminary finding: the L1 and L2 explanations are **not consistent** in some cases, suggesting that, given
-the labelling limitation (only FRP is available, not in-situ spread rate / spot distance), better models will
-require in-situ measurement mechanisms/policies rather than area as a proxy for intensity.
+- **Discrimination** (`modeling/03`): L1 ROC-AUC 0.914 [0.899, 0.930]; L2 ROC-AUC 0.854 [0.703, 0.916] — the
+  wide L2 interval is the honest signature of 11 positives.
+- **Research question** — is L1 (area) a proxy for L2 (intensity)? The area-trained score ranks the EWE events
+  with AUC ≈ 0.89 and, under leave-one-positive-out, all 11 rank above the 68th risk percentile (it generalizes),
+  yet only 6/11 EWEs are also area mega-fires and the Tree SHAP drivers diverge. **L1 is a partial proxy, not a
+  substitute** — area and intensity are complementary.
+- **Robustness** (`modeling/04`): the conclusion holds across the plausible range of the FLI threshold and η_r.
+- **Operational utility** (`modeling/05`): as a triage ranker, the top-10% risk captures ~80% of mega-fires and
+  82% of EWEs (8× over random); the bottleneck is precision (class prevalence), not recall.
+- **Faithfulness** (`modeling/02`): Tree SHAP is exact by construction; Faithfulness Correlation (Bhatt et al.,
+  2020) corroborates it, while Faithfulness Estimate (Alvarez-Melis & Jaakkola, 2018) is unreliable on
+  non-linear models (Miró-Nicolau et al., 2025).
+
+The central limitation remains the EWE label: only FRP is available (not in-situ spread rate / spot distance),
+so the intensity model is capable but high-variance.
 
 Honest performance metrics are reported out-of-fold (stratified CV); full analysis, figures, and discussion
 go in [`latex/main.pdf`](latex/main.pdf).
