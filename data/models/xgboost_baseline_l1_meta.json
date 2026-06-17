@@ -7,9 +7,9 @@
     "Araucanía",
     "O'Higgins"
   ],
-  "n_events": 8650,
-  "n_positives": 42,
-  "positive_rate": 0.0049,
+  "n_events": 31057,
+  "n_positives": 78,
+  "positive_rate": 0.0025,
   "n_features": 44,
   "features": [
     "latitud",
@@ -59,12 +59,12 @@
   ],
   "cv": {
     "n_splits": 5,
-    "roc_auc_mean": 0.9473,
-    "roc_auc_std": 0.0254,
-    "pr_auc_mean": 0.2688,
-    "pr_auc_std": 0.0757
+    "roc_auc_mean": 0.9168,
+    "roc_auc_std": 0.0343,
+    "pr_auc_mean": 0.1463,
+    "pr_auc_std": 0.0761
   },
-  "scale_pos_weight": 205.0,
+  "scale_pos_weight": 397.2,
   "xgb_params": {
     "n_estimators": 300,
     "max_depth": 4,
@@ -77,20 +77,20 @@
     "n_jobs": -1
   },
   "top_features": [
+    "e",
     "stl2",
-    "day_of_year",
-    "e"
+    "wind_speed"
   ],
   "environment": {
-    "python": "3.14.4",
+    "python": "3.12.13",
     "os": "Linux-6.19.14-200.fc43.x86_64-x86_64-with-glibc2.42",
     "cpu": "11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz",
     "ram_gb": 15.3,
     "xgboost": "3.2.0",
-    "shap": "0.51.0",
-    "scikit_learn": "1.8.0",
-    "numpy": "2.3.5",
-    "pandas": "2.3.3",
-    "train_seconds": 0.38
+    "shap": "0.52.0",
+    "scikit_learn": "1.9.0",
+    "numpy": "2.4.6",
+    "pandas": "3.0.3",
+    "train_seconds": 2.67
   }
 }

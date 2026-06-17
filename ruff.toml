@@ -1,0 +1,7 @@
+# Config de ruff. src/ y scripts/ usan tabs de forma deliberada (ver CLAUDE.md),
+# así que W191 (tab-indentation) y E101 (mixed-spaces-and-tabs) son falsos positivos.
+line-length = 120
+
+[lint]
+select = ["E", "W", "F"]
+ignore = ["W191", "E101"]

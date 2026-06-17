@@ -10,9 +10,9 @@ pipeline) y `scripts/README.md` (CLI); este archivo resume lo que cruza varios m
 ## Comandos
 
 ```bash
-make setup            # crea .venv (Python 3.12), instala requirements.txt, copia .env.example → .env
+make setup            # crea .venv (Python 3.12) con uv, instala requirements.txt, copia .env.example → .env
 make test             # pytest tests/ -v
-make lint             # ruff check src/ --select E,W,F
+make lint             # ruff check src/ (reglas en ruff.toml)
 make notebook         # jupyter lab eda/
 make readme           # regenera README.html con pandoc (NO editar el .html a mano)
 make report           # regenera docs/reporte_e3.html (reporte de sesión E3) con pandoc
@@ -30,11 +30,12 @@ python scripts/preprocess.py --years 2012-2018
 #   --backfill  : rellena celdas ERA5 sobre mar saltando a tierra (no destructivo, idempotente)
 #   --dedup     : corrige .nc con longitud duplicada por el merge de lotes (ver "Gotchas")
 
-# Experimentos de modeling (escriben reportes HTML en eda/)
-python modeling/02_l1_vs_l2_experiment.py    # L1 vs L2 + Quantus faithfulness
-python modeling/03_l2_robust_eval.py         # eval robusta de L2 (clase rara) + proxy L1→L2
-python modeling/04_l2_threshold_sensitivity.py  # robustez de L2 al umbral FLI y a η_r → latex/images/
-python modeling/05_operational_triage.py     # utilidad operacional (recall/lift por presupuesto) → latex/images/
+# Experimentos de modeling (notebooks: muestran las figuras inline y escriben los mismos artefactos)
+#   Abrir en Jupyter (make notebook / jupyter lab modeling/) o ejecutar headless con nbconvert:
+jupyter nbconvert --to notebook --execute --inplace modeling/02_l1_vs_l2_experiment.ipynb    # L1 vs L2 + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
+jupyter nbconvert --to notebook --execute --inplace modeling/03_l2_robust_eval.ipynb         # eval robusta de L2 (clase rara) + proxy L1→L2 → eda/L2_Robust_Eval_Report.html
+jupyter nbconvert --to notebook --execute --inplace modeling/04_l2_threshold_sensitivity.ipynb  # robustez de L2 al umbral FLI y a η_r → latex/images/
+jupyter nbconvert --to notebook --execute --inplace modeling/05_operational_triage.ipynb     # utilidad operacional (recall/lift por presupuesto) → latex/images/
 
 # Visualizador del pipeline (artefacto HTML autocontenido)
 .venv/bin/python viz/export_viz_data.py      # genera viz/viz_data.json (requiere red)
@@ -124,6 +125,7 @@ programático es `from src.pipeline import run_pipeline`.
   Respetar el del archivo que tocas.
 - **Docstrings Google** (`Args:`/`Returns:`/`Raises:`) con **prosa en español**; identificadores y términos
   técnicos en inglés. Convención consistente en `src/`, `scripts/`, `modeling/`, `viz/`.
-- CLI con **Typer**; logging estándar (sin dashboards). `ruff` para estilo.
+- CLI con **Typer**; logging estándar (sin dashboards). `ruff` para estilo (config en `ruff.toml`:
+  `line-length=120`, ignora `W191`/`E101` porque `src/`/`scripts/` usan tabs).
 - Los headers de banner (`# ===…` con curso/autores/archivo) van en los módulos de `src/`, `modeling/`,
   `viz/` — mantenerlos al crear archivos nuevos en esas carpetas.

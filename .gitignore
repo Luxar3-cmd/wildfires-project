@@ -53,3 +53,7 @@ Thumbs.db
 # Viz: deps descargadas (React UMD) e intermedio; pipeline_viz.html es autocontenido
 viz/_vendor/
 viz/viz_data.json
+
+logs
+viz
+references
