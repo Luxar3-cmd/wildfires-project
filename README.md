@@ -45,10 +45,10 @@ XAI-project/
 │   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
 ├── modeling/                          # restricted to the 4 study regions; config in src/modeling_features.py
 │   ├── 01_xgboost_baseline.ipynb        # L1 baseline: XGBoost + Tree SHAP
-│   ├── 02_l1_vs_l2_experiment.py        # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
-│   ├── 03_l2_robust_eval.py             # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
-│   ├── 04_l2_threshold_sensitivity.py   # L2 label robustness to the FLI threshold and η_r → latex/images/
-│   └── 05_operational_triage.py         # operational utility: recall/lift per inspection budget → latex/images/
+│   ├── 02_l1_vs_l2_experiment.ipynb      # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
+│   ├── 03_l2_robust_eval.ipynb           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
+│   ├── 04_l2_threshold_sensitivity.ipynb # L2 label robustness to the FLI threshold and η_r → latex/images/
+│   └── 05_operational_triage.ipynb       # operational utility: recall/lift per inspection budget → latex/images/
 ├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
 ├── data/                     # gitignored (datasets)
 │   ├── raw/ · interim/ · processed/ · models/ · archive/
@@ -155,10 +155,11 @@ make notebook                                            # jupyter lab eda/
 jupyter lab modeling/01_xgboost_baseline.ipynb
 
 # 6. Modeling experiments (2012–2018, restricted to the 4 study regions)
-python modeling/02_l1_vs_l2_experiment.py      # L1 vs L2 contrast + Quantus faithfulness
-python modeling/03_l2_robust_eval.py           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy
-python modeling/04_l2_threshold_sensitivity.py # L2 label robustness to FLI threshold / η_r
-python modeling/05_operational_triage.py       # operational utility (recall/lift per budget)
+#    open in Jupyter (jupyter lab modeling/) or run headless with nbconvert:
+jupyter nbconvert --to notebook --execute --inplace modeling/02_l1_vs_l2_experiment.ipynb      # L1 vs L2 contrast + Quantus faithfulness
+jupyter nbconvert --to notebook --execute --inplace modeling/03_l2_robust_eval.ipynb           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy
+jupyter nbconvert --to notebook --execute --inplace modeling/04_l2_threshold_sensitivity.ipynb # L2 label robustness to FLI threshold / η_r
+jupyter nbconvert --to notebook --execute --inplace modeling/05_operational_triage.ipynb       # operational utility (recall/lift per budget)
 
 # 7. Session report (docs/reporte_e3.html)
 make report

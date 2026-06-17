@@ -61,10 +61,10 @@ eventos (14,6%).
 
 ## Scripts nuevos
 
-- **`modeling/04_l2_threshold_sensitivity.py`** — re-deriva la etiqueta L2 en memoria sobre un
+- **`modeling/04_l2_threshold_sensitivity.ipynb`** — re-deriva la etiqueta L2 en memoria sobre un
   grid del umbral FLI (6.000–16.000 kW/m) y de la *radiant fraction* η_r (0,10–0,20), y mide si
   la conclusión del proxy aguanta. No toca el parquet.
-- **`modeling/05_operational_triage.py`** — evalúa el modelo como herramienta de priorización
+- **`modeling/05_operational_triage.ipynb`** — evalúa el modelo como herramienta de priorización
   (recall, lift y falsas alarmas por presupuesto de inspección), en tres modos (L1→L1, L2→L2 y
   el proxy L1→L2).
 
@@ -273,13 +273,13 @@ resolver**. Salida en `latex/main.pdf`.
 
 ```bash
 # Resultados E3 (robusto + proxy + LOPO)        -> eda/L2_Robust_Eval_Report.html
-python modeling/03_l2_robust_eval.py
+jupyter nbconvert --to notebook --execute --inplace modeling/03_l2_robust_eval.ipynb
 # Sensibilidad del umbral                        -> latex/images/l2_threshold_sensitivity.png
-python modeling/04_l2_threshold_sensitivity.py
+jupyter nbconvert --to notebook --execute --inplace modeling/04_l2_threshold_sensitivity.ipynb
 # Triage operacional                             -> latex/images/operational_triage.png
-python modeling/05_operational_triage.py
+jupyter nbconvert --to notebook --execute --inplace modeling/05_operational_triage.ipynb
 # SHAP + Quantus                                 -> eda/L1_vs_L2_Experiment_Report.html
-python modeling/02_l1_vs_l2_experiment.py
+jupyter nbconvert --to notebook --execute --inplace modeling/02_l1_vs_l2_experiment.ipynb
 # Compilar el paper                              -> latex/main.pdf
 cd latex && latexmk -pdf main.tex
 # Regenerar este reporte                         -> docs/reporte_e3.html

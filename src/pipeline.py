@@ -307,8 +307,18 @@ def _write_outputs(enriched: pd.DataFrame, versioned_path: Path, params: dict[st
 		era5_match_quality).
 	"""
 	LATEST_PARQUET.parent.mkdir(parents=True, exist_ok=True)
+	# Guardia: un run sin cobertura ERA5 válida (p. ej. el smoke test `--skip-download`
+	# sin NetCDF en disco) NO debe pisar el alias `latest`, que los análisis consumen.
+	era5_ok = "era5_match_quality" in enriched.columns and \
+		enriched["era5_match_quality"].isin(["good", "land_snapped"]).any()
 	if versioned_path.resolve() != LATEST_PARQUET.resolve():
-		shutil.copy2(versioned_path, LATEST_PARQUET)
+		if era5_ok:
+			shutil.copy2(versioned_path, LATEST_PARQUET)
+		else:
+			logger.warning(
+				"Run sin cobertura ERA5 válida; no se actualiza %s (se conserva el run previo).",
+				LATEST_PARQUET.name,
+			)
 
 	attribution_path = write_attribution_sidecar(versioned_path, extra={"params": params})
 	latest_attribution_path = write_attribution_sidecar(LATEST_PARQUET, extra={"params": params})

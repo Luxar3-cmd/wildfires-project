@@ -279,10 +279,10 @@ detections.</p>
 │   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
 ├── modeling/                          # restricted to the 4 study regions; config in src/modeling_features.py
 │   ├── 01_xgboost_baseline.ipynb        # L1 baseline: XGBoost + Tree SHAP
-│   ├── 02_l1_vs_l2_experiment.py        # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
-│   ├── 03_l2_robust_eval.py             # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
-│   ├── 04_l2_threshold_sensitivity.py   # L2 label robustness to the FLI threshold and η_r → latex/images/
-│   └── 05_operational_triage.py         # operational utility: recall/lift per inspection budget → latex/images/
+│   ├── 02_l1_vs_l2_experiment.ipynb      # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
+│   ├── 03_l2_robust_eval.ipynb           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
+│   ├── 04_l2_threshold_sensitivity.ipynb # L2 label robustness to the FLI threshold and η_r → latex/images/
+│   └── 05_operational_triage.ipynb       # operational utility: recall/lift per inspection budget → latex/images/
 ├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
 ├── data/                     # gitignored (datasets)
 │   ├── raw/ · interim/ · processed/ · models/ · archive/
@@ -338,11 +338,11 @@ interchangeable</strong>: the area score ranks intensity events well
 and their Tree SHAP drivers diverge.</p>
 <hr />
 <h2 id="installation-credentials">Installation &amp; credentials</h2>
-<p>Python 3.12 recommended (Fedora/RHEL:
-<code>dnf install python3.12</code>; macOS:
-<code>brew install python@3.12</code>).</p>
+<p>Requires <a href="https://docs.astral.sh/uv/">uv</a> — install with
+<code>curl -LsSf https://astral.sh/uv/install.sh | sh</code>. uv
+provisions Python 3.12 automatically; no system Python required.</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">git</span> clone <span class="op">&lt;</span>repo-url<span class="op">&gt;</span> <span class="kw">&amp;&amp;</span> <span class="bu">cd</span> XAI-project</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> setup            <span class="co"># creates .venv, installs requirements.txt, copies .env.example → .env</span></span></code></pre></div>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> setup            <span class="co"># creates .venv with uv, installs requirements.txt, copies .env.example → .env</span></span></code></pre></div>
 <p>Edit <code>.env</code> with your credentials (see
 <code>.env.example</code>):</p>
 <table>
@@ -398,13 +398,14 @@ key: YOUR-API-KEY</code></pre>
 <span id="cb5-16"><a href="#cb5-16" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> lab modeling/01_xgboost_baseline.ipynb</span>
 <span id="cb5-17"><a href="#cb5-17" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb5-18"><a href="#cb5-18" aria-hidden="true" tabindex="-1"></a><span class="co"># 6. Modeling experiments (2012–2018, restricted to the 4 study regions)</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/02_l1_vs_l2_experiment.py      <span class="co"># L1 vs L2 contrast + Quantus faithfulness</span></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/03_l2_robust_eval.py           <span class="co"># robust L2 eval (repeated CV + LOPO) + L1→L2 proxy</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/04_l2_threshold_sensitivity.py <span class="co"># L2 label robustness to FLI threshold / η_r</span></span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> modeling/05_operational_triage.py       <span class="co"># operational utility (recall/lift per budget)</span></span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a><span class="co"># 7. Session report (docs/reporte_e3.html)</span></span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> report</span></code></pre></div>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true" tabindex="-1"></a><span class="co">#    open in Jupyter (jupyter lab modeling/) or run headless with nbconvert:</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> nbconvert <span class="at">--to</span> notebook <span class="at">--execute</span> <span class="at">--inplace</span> modeling/02_l1_vs_l2_experiment.ipynb      <span class="co"># L1 vs L2 contrast + Quantus faithfulness</span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> nbconvert <span class="at">--to</span> notebook <span class="at">--execute</span> <span class="at">--inplace</span> modeling/03_l2_robust_eval.ipynb           <span class="co"># robust L2 eval (repeated CV + LOPO) + L1→L2 proxy</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> nbconvert <span class="at">--to</span> notebook <span class="at">--execute</span> <span class="at">--inplace</span> modeling/04_l2_threshold_sensitivity.ipynb <span class="co"># L2 label robustness to FLI threshold / η_r</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a><span class="ex">jupyter</span> nbconvert <span class="at">--to</span> notebook <span class="at">--execute</span> <span class="at">--inplace</span> modeling/05_operational_triage.ipynb       <span class="co"># operational utility (recall/lift per budget)</span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a><span class="co"># 7. Session report (docs/reporte_e3.html)</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> report</span></code></pre></div>
 <p>The enriched dataset is also shipped compressed at the repo root
 (<code>conaf_enriched_latest.tar.gz</code>) so the notebooks can run
 without re-downloading the source APIs.</p>
