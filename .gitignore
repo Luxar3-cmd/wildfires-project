@@ -57,3 +57,9 @@ viz/viz_data.json
 logs
 viz
 references
+
+# Docs HTML generados (regenerar: make readme / make report / ejecutar los notebooks)
+/README.html
+/docs/reporte_e3.html
+/eda/L1_vs_L2_Experiment_Report.html
+/eda/L2_Robust_Eval_Report.html
