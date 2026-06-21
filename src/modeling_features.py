@@ -23,7 +23,7 @@ from __future__ import annotations
 
 # Predictores ex-ante, agrupados por origen (== whitelist de la tabla del paper).
 LOCATION = ["latitud", "longitud", "region", "provincia", "comuna"]
-IGNITION_TIME = ["month", "hour", "day_of_year"]
+IGNITION_TIME = ["month", "hour", "doy_sin", "doy_cos"]
 ERA5_TEMPORAL = ["t2m", "d2m", "u10", "v10", "tp", "ssrd",
                  "stl1", "stl2", "stl3", "stl4",
                  "swvl1", "swvl2", "swvl3", "swvl4",
@@ -33,7 +33,7 @@ DERIVED = ["t2m_celsius", "d2m_celsius",
            "stl1_celsius", "stl2_celsius", "stl3_celsius", "stl4_celsius",
            "relative_humidity", "vpd_hpa", "wind_speed", "wind_direction", "tp_mm"]
 
-# 44 columnas: location (5) + ignition (3) + ERA5 temporal (19) + estático (6) + derivado (11).
+# 45 columnas: location (5) + ignition (4: month, hour, doy_sin, doy_cos) + ERA5 temporal (19) + estático (6) + derivado (11).
 FEATURE_COLS = LOCATION + IGNITION_TIME + ERA5_TEMPORAL + ERA5_STATIC + DERIVED
 
 # Umbral L1 (megaincendio por área) y semillas/folds de la validación cruzada.
