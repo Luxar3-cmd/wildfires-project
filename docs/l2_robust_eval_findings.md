@@ -7,14 +7,6 @@ Dataset: `conaf_enriched_2012_2018` after the **ERA5 grid de-duplication fix** (
 Protocol: **repeated stratified 5-fold CV (20 repeats)** for confidence intervals; **leave-one-positive-out
 (LOPO)** for the strictest held-out test; rank-based metrics on averaged out-of-fold (OOF) risk.
 
-> **Data note.** Earlier runs used a parquet in which most fires carried `era5_match_quality='land_snapped'`.
-> That was a processing artifact: the per-batch `xr.merge` of the ERA5 downloads duplicated every longitude
-> column (one real + one all-NaN "phantom"), so the nearest-neighbour match often landed on a NaN column and
-> triggered a spurious land-snap. After de-duplicating the grid and re-extracting ERA5 from the real cells,
-> `land_snapped` dropped from 14,061 to 538 (the genuinely coastal cases) and 716 false-`water` rows were
-> recovered — hence 32,162 usable rows here vs 31,446 before. Meteorological values on already-`good` rows
-> are unchanged (verified Δ=0); the numbers below are the post-fix, honest baseline.
-
 ## A. Robustness (repeated 20×5 CV, 95% CI from 2.5/97.5 percentiles)
 
 | Model | ROC-AUC | ROC-AUC 95% CI | PR-AUC | PR-AUC 95% CI | PR base (prevalence) |
