@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Proyecto de curso INF-473 (XAI, UTFSM). Predice —**condicional a que un incendio ya se inició**— si
 escalará a *megaincendio*, y explica los drivers con **Tree SHAP**. Fusiona registros CONAF + reanálisis
 ERA5-Land + detecciones MODIS/FIRMS. La doc de usuario está en `README.md`, `src/README.md` (spec del
-pipeline) y `scripts/README.md` (CLI); este archivo resume lo que cruza varios módulos.
+pipeline), `scripts/README.md` (CLI) y `docs/data_documentation.md` (esquema completo de datos: CONAF/ERA5/MODIS,
+labels L1/L2 y las 45 features); este archivo resume lo que cruza varios módulos.
 
 ## Comandos
 
@@ -15,7 +16,6 @@ make test             # pytest tests/ -v
 make lint             # ruff check src/ (reglas en ruff.toml)
 make notebook         # jupyter lab eda/
 make readme           # regenera README.html con pandoc (NO editar el .html a mano)
-make report           # regenera docs/reporte_e3.html (reporte de sesión E3) con pandoc
 
 # Un solo test
 .venv/bin/python -m pytest tests/test_era5_extractor.py -v
@@ -30,12 +30,9 @@ python scripts/preprocess.py --years 2012-2018
 #   --backfill  : rellena celdas ERA5 sobre mar saltando a tierra (no destructivo, idempotente)
 #   --dedup     : corrige .nc con longitud duplicada por el merge de lotes (ver "Gotchas")
 
-# Experimentos de modeling (notebooks: muestran las figuras inline y escriben los mismos artefactos)
-#   Abrir en Jupyter (make notebook / jupyter lab modeling/) o ejecutar headless con nbconvert:
-jupyter nbconvert --to notebook --execute --inplace modeling/02_l1_vs_l2_experiment.ipynb    # L1 vs L2 + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
-jupyter nbconvert --to notebook --execute --inplace modeling/03_l2_robust_eval.ipynb         # eval robusta de L2 (clase rara) + proxy L1→L2 → eda/L2_Robust_Eval_Report.html
-jupyter nbconvert --to notebook --execute --inplace modeling/04_l2_threshold_sensitivity.ipynb  # robustez de L2 al umbral FLI y a η_r → latex/images/
-jupyter nbconvert --to notebook --execute --inplace modeling/05_operational_triage.ipynb     # utilidad operacional (recall/lift por presupuesto) → latex/images/
+# Experimentos de modeling (notebook unificado: muestra las figuras inline)
+#   Abrir en Jupyter (jupyter lab modeling/) o ejecutar headless con nbconvert:
+jupyter nbconvert --to notebook --execute --inplace modeling/Experiments.ipynb   # L1 vs L2 + Tree SHAP/beeswarm + proxy L1→L2 + priorización
 
 # Visualizador del pipeline (artefacto HTML autocontenido)
 .venv/bin/python viz/export_viz_data.py      # genera viz/viz_data.json (requiere red)
@@ -76,28 +73,28 @@ programático es `from src.pipeline import run_pipeline`.
 - **L2** — aproximación física de un Extreme Wildfire Event (EWE): FRP→FLI ≥ 10.000 kW/m, computado en
   `src/modis.py`. **Clase muy rara: 11 positivos** en 2012-2018 (4 regiones). Limitación: la definición EWE completa
   exige *spread rate* y *spot distance* (solo in-situ); aquí solo hay FRP.
-- La pregunta es si L1 (fácil de computar) es proxy válido de L2 (intensidad). `modeling/02`–`05` lo
-  contrastan (restringidos a 4 regiones): hallazgo E3 — L1 es **proxy parcial, no sustituto** (L1→L2 AUC≈0,89,
-  overlap 6/11, drivers SHAP divergentes). Detalles en `docs/l2_robust_eval_findings.md` y `docs/reporte_e3.html`.
+- La pregunta es si L1 (fácil de computar) es proxy válido de L2 (intensidad). `modeling/Experiments.ipynb` lo
+  contrasta (restringido a 4 regiones): hallazgo — L1 es **proxy parcial, no sustituto** (L1→L2 AUC≈0,89,
+  overlap 6/11, drivers SHAP en gran parte compartidos, ρ≈0,72). Detalles en el paper (`latex/paper/`, sección Results).
 
 ## Modeling: fuente única + caveats de datos
 
-- **`src/modeling_features.py`** es la única fuente de verdad para los experimentos: la whitelist de **44
+- **`src/modeling_features.py`** es la única fuente de verdad para los experimentos: la whitelist de **45
   features ex-ante** (`FEATURE_COLS`), `XGB_PARAMS`, `MEGAFIRE_HA_THRESHOLD`, semillas, folds y `STUDY_REGIONS`
   (las 4 regiones de estudio: Maule, Biobío, Araucanía, O'Higgins). El notebook `modeling/01` y los scripts
   `02`–`05` importan de aquí y filtran a esas regiones — **no redefinir estas constantes localmente**
   (antes estaban triplicadas y se desincronizaron). No pertenece al pipeline de datos pese a vivir en `src/`.
-- **Las 44 features están pobladas (post-fix 2026-06-14).** Antes, `evavt`
+- **Las features ex-ante están pobladas (post-fix 2026-06-14).** Antes, `evavt`
   (`evaporation_from_vegetation_transpiration`) y los 6 invariantes ERA5 (`slt, lsm, cvh, cvl, tvh, tvl`)
   salían **all-NaN** en el parquet 2012-2018 —por un bug en `deduplicate_lon` (ver Gotchas) y por no haberse
   descargado el NetCDF de invariantes—, así que `load()` los descartaba y `02`/`03` entrenaban con ~37 features
-  efectivas. Se corrigió el código y se regeneró el dataset (no destructivo, backup `.bak_pre_evavt_inv`): hoy
-  son **44 features efectivas**.
+  efectivas. Se corrigió el código y se regeneró el dataset (no destructivo, backup `.bak_pre_evavt_inv`): quedaron
+  44 efectivas, y la encoding cíclica posterior (`day_of_year` → `doy_sin`/`doy_cos`, 2026-06-21) las dejó en **45 features efectivas**.
 - Métricas honestas: CV estratificada (repetida 20× en `03`) con intervalos de confianza y LOPO, dado el
   conteo mínimo de positivos. El intervalo ancho de L2 es la firma esperada de 11 positivos, no un error.
 - El dataset canónico de modeling es `data/processed/conaf_enriched_2012_2018.parquet` (gitignored; viene
   comprimido como `.tar.gz` en la raíz). Los scripts lo hardcodean y filtran a `STUDY_REGIONS` → **30.511 filas
-  usables** (L1=76, L2=11), 44 features.
+  usables** (L1=76, L2=11), 45 features.
 
 ## Gotchas que cruzan archivos
 
@@ -112,7 +109,7 @@ programático es `from src.pipeline import run_pipeline`.
   gemelas celda a celda (lossless + idempotente, con backup) en vez de descartar una. Antes descartaba la
   gemela que traía `evavt` (llega en un batch aparte con grilla desfasada) y lo dejaba all-NaN — esa era la
   causa del punto anterior. El baseline honesto es **post-fix**; el modeling lo restringe a `STUDY_REGIONS`
-  → **30.511 filas usables** (44 features; L1=76, L2=11). Si ves un `land_snapped` masivo en datos nuevos, sospecha de esto.
+  → **30.511 filas usables** (45 features; L1=76, L2=11). Si ves un `land_snapped` masivo en datos nuevos, sospecha de esto.
 - **Inmutabilidad.** NUNCA modificar los `.parquet` de `data/processed/` ni `data/raw/` en sitio. Toda
   limpieza/filtrado/transformación va en memoria dentro de los scripts. (`backfill`/`dedup` son la excepción
   pactada: in-place no destructivo con backup.)

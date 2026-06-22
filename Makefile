@@ -1,7 +1,7 @@
 VENV       := .venv
 JUPYTER    := $(VENV)/bin/jupyter
 
-.PHONY: setup notebook test lint readme report clean help
+.PHONY: setup notebook test lint readme clean help
 
 help: ## Lista los targets disponibles
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -29,14 +29,6 @@ readme: ## Genera README.html (estilo propio) desde README.md con pandoc
 		--metadata title="XAI-project · Interpretable Prediction of Mega-Fires in Chile" \
 		-o README.html
 	@echo "README.html generado. No editar a mano: regenerar con 'make readme'."
-
-report: ## Genera docs/reporte_e3.html (reporte de sesión E3) desde docs/reporte_e3.md
-	pandoc docs/reporte_e3.md -s --toc --toc-depth=2 --embed-resources \
-		--resource-path=.:latex/images \
-		-c docs/readme.css \
-		--metadata title="XAI-project · Migración E3, resultados y utilidad operacional" \
-		-o docs/reporte_e3.html
-	@echo "docs/reporte_e3.html generado. Regenerar con 'make report'."
 
 clean: ## Elimina .venv y cachés de Python/pytest
 	rm -rf $(VENV) .pytest_cache .ruff_cache

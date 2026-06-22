@@ -13,8 +13,7 @@ estas definiciones estaban triplicadas (notebook + dos scripts) y se habían
 desincronizado (`evavt` faltaba en los scripts); importarlas desde aquí evita
 que vuelvan a divergir.
 
-Consumidores: ``modeling/01_xgboost_baseline.ipynb``,
-``modeling/02_l1_vs_l2_experiment.py`` y ``modeling/03_l2_robust_eval.py``.
+Consumidores: ``modeling/Experiments.ipynb`` (L1 vs L2 + Tree SHAP + proxy L1->L2).
 
 Los nombres son los short-names que xarray expone tras leer el NetCDF de ERA5
 (mapeados desde los long-names del API de CDS en ``src/era5.py``).
