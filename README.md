@@ -44,14 +44,11 @@ XAI-project/
 │   ├── 01_conaf_eda.ipynb            # CONAF EDA 2002–2020 (heavy-tail, maps, seasonality)
 │   └── 02_frontier_sensitivity_l2.ipynb  # L2 (EWE) label sensitivity analysis
 ├── modeling/                          # restricted to the 4 study regions; config in src/modeling_features.py
-│   ├── 01_xgboost_baseline.ipynb        # L1 baseline: XGBoost + Tree SHAP
-│   ├── 02_l1_vs_l2_experiment.ipynb      # L1 vs L2 contrast: Tree SHAP + Quantus faithfulness → eda/L1_vs_L2_Experiment_Report.html
-│   ├── 03_l2_robust_eval.ipynb           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy → eda/L2_Robust_Eval_Report.html
-│   ├── 04_l2_threshold_sensitivity.ipynb # L2 label robustness to the FLI threshold and η_r → latex/images/
-│   └── 05_operational_triage.ipynb       # operational utility: recall/lift per inspection budget → latex/images/
+│   └── Experiments.ipynb                 # unified: L1 vs L2 + Tree SHAP/beeswarm + L1→L2 proxy + prioritization
 ├── tests/                    # Pytest suite (loader, era5, modis, pipeline)
 ├── data/                     # gitignored (datasets)
 │   ├── raw/ · interim/ · processed/ · models/ · archive/
+├── docs/                     # data_documentation.md (full data + 45-feature schema) · insights.md · figures/
 ├── latex/                    # IEEE paper (Overleaf source + main.pdf)
 ├── references/               # Reference PDFs
 ├── requirements.txt · Makefile · .env.example
@@ -90,8 +87,8 @@ Supplementary docs (Spanish): [`src/README.md`](src/README.md) (pipeline spec), 
                                        │
                        ┌───────────────┴───────────────┐
                        ▼                                ▼
-                 eda/ notebooks                modeling/01_xgboost_baseline.ipynb
-                 (heavy-tail, labels)          XGBoost + Tree SHAP (L1)
+                 eda/ notebooks                modeling/Experiments.ipynb
+                 (heavy-tail, labels)          XGBoost + Tree SHAP (L1 & L2)
 ```
 
 **Labels.** *L1* — area-based mega-fire (`superficie_quemada_total_ha ≥ 1,000`): a coarse but direct label.
@@ -151,18 +148,9 @@ python scripts/megafire_thresholds.py
 # 4. Exploratory analysis
 make notebook                                            # jupyter lab eda/
 
-# 5. Baseline model + explanations
-jupyter lab modeling/01_xgboost_baseline.ipynb
-
-# 6. Modeling experiments (2012–2018, restricted to the 4 study regions)
+# 5. Modeling experiments (2012–2018, restricted to the 4 study regions)
 #    open in Jupyter (jupyter lab modeling/) or run headless with nbconvert:
-jupyter nbconvert --to notebook --execute --inplace modeling/02_l1_vs_l2_experiment.ipynb      # L1 vs L2 contrast + Quantus faithfulness
-jupyter nbconvert --to notebook --execute --inplace modeling/03_l2_robust_eval.ipynb           # robust L2 eval (repeated CV + LOPO) + L1→L2 proxy
-jupyter nbconvert --to notebook --execute --inplace modeling/04_l2_threshold_sensitivity.ipynb # L2 label robustness to FLI threshold / η_r
-jupyter nbconvert --to notebook --execute --inplace modeling/05_operational_triage.ipynb       # operational utility (recall/lift per budget)
-
-# 7. Session report (docs/reporte_e3.html)
-make report
+jupyter nbconvert --to notebook --execute --inplace modeling/Experiments.ipynb                 # L1 vs L2 + Tree SHAP/beeswarm + L1→L2 proxy + prioritization
 ```
 
 The enriched dataset is also shipped compressed at the repo root (`conaf_enriched_latest.tar.gz`) so the
